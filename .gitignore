@@ -37,3 +37,6 @@ scrollcheck.mjs
 !/public/**/*.jpg
 !/src/app/icon.svg
 
+
+# local visual-QA scratch scripts
+.qa-*.mjs
