@@ -379,7 +379,9 @@
   }
 }
 
-[data-reveal] {
+/* Content is visible by default; only elements marked `pending` by JS (i.e.
+   those starting below the fold) are hidden until they scroll into view. */
+[data-reveal="pending"] {
   opacity: 0;
   transform: translateY(20px);
   transition:
@@ -388,7 +390,7 @@
   transition-delay: var(--reveal-delay, 0ms);
 }
 
-[data-reveal].is-visible {
+[data-reveal="pending"].is-visible {
   opacity: 1;
   transform: none;
 }
@@ -476,7 +478,7 @@
     transition-duration: 0.01ms !important;
   }
 
-  [data-reveal] {
+  [data-reveal="pending"] {
     opacity: 1;
     transform: none;
   }

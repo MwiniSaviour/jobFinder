@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { ButtonLink } from "@/components/ui/button";
+
+export const metadata: Metadata = {
+  title: "Page not found",
+  description: "This page has moved on. Browse all open roles, the teams hiring, and what the work pays.",
+};
 
 export default function NotFound() {
   return (
