@@ -13,9 +13,14 @@
   --color-border: #e2e8f0;
   --color-muted: #64748b;
   --color-brand: #0e7490;
+  --color-brand-strong: #155e75;
   --color-brand-soft: #ecfeff;
   --radius-card: 12px;
   --radius-pill: 9999px;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 10px 24px -14px rgb(15 23 42 / 0.18);
+  --shadow-hover: 0 2px 4px rgb(15 23 42 / 0.06), 0 16px 36px -16px rgb(15 23 42 / 0.24);
+  --shadow-nav: 0 -12px 32px -18px rgb(15 23 42 / 0.22);
+  --shadow-raised: 0 10px 24px -8px rgb(14 116 144 / 0.55), 0 3px 8px rgb(14 116 144 / 0.28);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -26,10 +31,67 @@ body {
   font-family: var(--font-geist-sans);
 }
 
+a {
+  text-underline-offset: 3px;
+}
+
+::selection {
+  background-color: rgb(14 116 144 / 0.16);
+}
+
+:focus-visible {
+  outline: 2px solid #0e7490;
+  outline-offset: 2px;
+}
+
+* {
+  caret-color: #0e7490;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
 .card {
   background-color: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
   padding: 1.5rem;
+}
+
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.997);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.hero-rise {
+  animation: hero-rise 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--hero-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-rise {
+    animation: none;
+  }
 }
