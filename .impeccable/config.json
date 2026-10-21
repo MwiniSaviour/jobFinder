@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "*"
+        ],
+        "createdAt": "2026-10-21T07:48:37.967Z",
+        "reason": "Intentional cream background selected by user (DESIGN.md palette)"
+      },
+      {
+        "rule": "ai-color-palette",
+        "value": "*",
+        "files": [
+          "http://localhost:3100*"
+        ],
+        "createdAt": "2026-10-21T07:48:49.838Z",
+        "reason": "Intentional teal gradient for HeroCarousel slides (user-approved)"
+      }
+    ]
+  }
+}

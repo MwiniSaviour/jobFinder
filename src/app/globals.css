@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #f3f1ea;
   --foreground: #171717;
 }
 
@@ -9,20 +9,22 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: #ffffff;
-  --color-surface-alt: #f8fafc;
-  --color-border: #e2e8f0;
-  --color-muted: #64748b;
+  --color-surface-alt: #f8f7f1;
+  --color-border: #e5e2d7;
+  --color-muted: #6e6d64;
   --color-brand: #0e7490;
   --color-brand-strong: #155e75;
   --color-brand-soft: #ecfeff;
-  --radius-card: 12px;
+  --color-accent: #eab308;
+  --radius-card: 16px;
+  --radius-card-lg: 22px;
+  --radius-tile: 14px;
   --radius-pill: 9999px;
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 10px 24px -14px rgb(15 23 42 / 0.18);
-  --shadow-hover: 0 2px 4px rgb(15 23 42 / 0.06), 0 16px 36px -16px rgb(15 23 42 / 0.24);
+  --shadow-card: 0 1px 2px rgb(87 83 71 / 0.06), 0 10px 24px -14px rgb(87 83 71 / 0.18);
+  --shadow-hover: 0 2px 4px rgb(87 83 71 / 0.07), 0 16px 36px -16px rgb(87 83 71 / 0.22);
   --shadow-nav: 0 -12px 32px -18px rgb(15 23 42 / 0.22);
   --shadow-raised: 0 10px 24px -8px rgb(14 116 144 / 0.55), 0 3px 8px rgb(14 116 144 / 0.28);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
 body {
@@ -54,22 +56,23 @@ a {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #cbd5e1;
+  background-color: #d6d2c4;
   border: 3px solid transparent;
   border-radius: 9999px;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #94a3b8;
+  background-color: #b9b4a6;
 }
 
-.card {
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
-  padding: 1.5rem;
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes hero-rise {

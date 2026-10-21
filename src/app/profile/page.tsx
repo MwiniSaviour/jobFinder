@@ -1,27 +1,57 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import Link from "next/link";
-import { UserIcon } from "../../components/Icons";
+import { ApplicationsList } from "../../components/ApplicationsList";
+import { ChevronRightIcon, UserIcon } from "../../components/Icons";
+import { SectionHeader } from "../../components/SectionHeader";
 
 export const metadata: Metadata = {
   title: "Your profile — JobFinder",
 };
 
+const PAGE_TITLE = "Your profile";
+const PAGE_SUB =
+  "Sign-in, saved searches, and booking history arrive in a release right after this one.";
+const APPLICATIONS_TITLE = "My applications";
+const HOME_LABEL = "Back to home";
+const HOME_HREF = "/";
+const SECTION_STAGGER_MS = 80;
+
+function sectionDelay(offset: number): CSSProperties {
+  return {
+    "--hero-delay": `${offset * SECTION_STAGGER_MS}ms`,
+  } as CSSProperties;
+}
+
 export default function ProfilePage() {
   return (
-    <main className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pt-16 text-center">
-      <span className="grid size-16 place-items-center rounded-full bg-brand-soft ring-1 ring-brand/15">
-        <UserIcon className="size-7 text-brand" />
-      </span>
-      <h1 className="mt-4 text-[1.4rem] font-semibold tracking-tight">Your profile</h1>
-      <p className="mt-2 max-w-xs text-[14px] text-muted">
-        Sign-in, saved searches, and booking history arrive in a release right after this one.
-      </p>
-      <Link
-        href="/"
-        className="mt-6 rounded-pill border border-border bg-surface px-5 py-2.5 text-sm font-semibold shadow-card transition-shadow hover:border-brand/40 hover:shadow-hover"
-      >
-        Back to home
-      </Link>
+    <main className="mx-auto max-w-lg space-y-8 px-5 pb-10 pt-6">
+      <div className="hero-rise flex items-center gap-3.5">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-brand-soft">
+          <UserIcon className="h-6 w-6 text-brand" />
+        </span>
+        <div className="min-w-0">
+          <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+            {PAGE_TITLE}
+          </h1>
+          <p className="mt-1 text-[13px] text-muted">{PAGE_SUB}</p>
+        </div>
+      </div>
+      <section className="hero-rise" style={sectionDelay(1)}>
+        <SectionHeader title={APPLICATIONS_TITLE} />
+        <ApplicationsList />
+      </section>
+      <section className="hero-rise" style={sectionDelay(2)}>
+        <div className="divide-y divide-border overflow-hidden rounded-[16px] border border-border shadow-card">
+          <Link
+            href={HOME_HREF}
+            className="flex items-center justify-between gap-3 p-4 text-[15px] font-medium transition-colors hover:bg-surface-alt/60"
+          >
+            {HOME_LABEL}
+            <ChevronRightIcon className="h-4 w-4 text-muted" />
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }

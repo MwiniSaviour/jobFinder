@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
+import { CategoryTile } from "../../components/CategoryTile";
+import { TrustBadge } from "../../components/TrustBadge";
 
 export const metadata: Metadata = {
   title: "Services",
 };
+
+const PAGE_TITLE = "Book a service";
+const PAGE_SUB =
+  "Trusted local pros for home, tech, and everyday tasks — with rates and time estimates shown up front.";
 
 type ServiceListing = {
   id: number;
@@ -10,7 +17,6 @@ type ServiceListing = {
   category: string;
   price: string;
   duration: string;
-  blurb: string;
 };
 
 const services: ServiceListing[] = [
@@ -20,8 +26,6 @@ const services: ServiceListing[] = [
     category: "Home",
     price: "$95 flat",
     duration: "3-4 hours",
-    blurb:
-      "Whole-home kitchen, bath, and floor cleaning by a background-checked pro.",
   },
   {
     id: 2,
@@ -29,7 +33,6 @@ const services: ServiceListing[] = [
     category: "Repair",
     price: "$60+",
     duration: "1-2 hours",
-    blurb: "Diagnose and fix washers, dryers, and ovens on-site at your home.",
   },
   {
     id: 3,
@@ -37,7 +40,6 @@ const services: ServiceListing[] = [
     category: "Maintenance",
     price: "$40",
     duration: "1 hour",
-    blurb: "Brakes, gears, and tires adjusted and road-ready within the hour.",
   },
   {
     id: 4,
@@ -45,8 +47,6 @@ const services: ServiceListing[] = [
     category: "Tech",
     price: "$75",
     duration: "2 hours",
-    blurb:
-      "Wi-Fi, smart TV, and laptop setup with no-jargon troubleshooting for each device.",
   },
   {
     id: 5,
@@ -54,7 +54,6 @@ const services: ServiceListing[] = [
     category: "Moving",
     price: "$25/hr",
     duration: "2+ hours",
-    blurb: "Two movers for loading, unloading, or room-to-room rearranging.",
   },
   {
     id: 6,
@@ -62,32 +61,50 @@ const services: ServiceListing[] = [
     category: "Pet",
     price: "$20",
     duration: "30 minutes",
-    blurb: "Neighborhood walks with photo updates and a fresh water bowl.",
   },
 ];
 
+const ROW_STAGGER_MS = 80;
+const ROW_STAGGER_MAX_MS = 400;
+
+function rowDelay(index: number): CSSProperties {
+  return {
+    "--hero-delay": `${Math.min(index * ROW_STAGGER_MS, ROW_STAGGER_MAX_MS)}ms`,
+  } as CSSProperties;
+}
+
 export default function ServicesPage() {
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
-      <h1 className="text-2xl font-bold">Book a service</h1>
-      <p className="mt-2 max-w-2xl text-sm text-muted">
-        Trusted local pros for home, tech, and everyday tasks — with rates and
-        time estimates shown up front.
-      </p>
-      <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {services.map((service) => (
-          <li key={service.id} className="card">
-            <div className="flex items-start justify-between gap-2">
-              <h2 className="text-base font-semibold">{service.name}</h2>
-              <span className="rounded-pill bg-brand-soft px-2.5 py-0.5 text-xs text-brand">
-                {service.category}
+    <main className="mx-auto max-w-lg space-y-8 px-5 pb-10 pt-6">
+      <div className="hero-rise">
+        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+          {PAGE_TITLE}
+        </h1>
+        <p className="mt-2 text-[15px] text-muted">{PAGE_SUB}</p>
+      </div>
+      <ul className="space-y-2.5">
+        {services.map((service, index) => (
+          <li key={service.id} className="hero-rise" style={rowDelay(index)}>
+            <article className="flex items-center gap-3.5 rounded-[16px] border border-border bg-surface p-3.5 shadow-card transition hover:-translate-y-0.5 hover:shadow-hover">
+              <CategoryTile category={service.category} />
+              <span className="min-w-0 flex-1">
+                <span className="block w-fit rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand">
+                  {service.category}
+                </span>
+                <span className="mt-1.5 block truncate text-[15px] font-semibold">
+                  {service.name}
+                </span>
+                <span className="mt-0.5 block truncate text-[13px] text-muted">
+                  {service.duration}
+                </span>
               </span>
-            </div>
-            <p className="mt-3 text-sm">
-              <span className="font-semibold text-brand">{service.price}</span>
-              <span className="text-muted"> · {service.duration}</span>
-            </p>
-            <p className="mt-2 text-sm">{service.blurb}</p>
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <span className="text-[15px] font-semibold">
+                  {service.price}
+                </span>
+                <TrustBadge />
+              </span>
+            </article>
           </li>
         ))}
       </ul>

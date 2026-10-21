@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
+import { CategoryTile } from "../../components/CategoryTile";
 
 export const metadata: Metadata = {
   title: "Rides",
 };
+
+const PAGE_TITLE = "Book a ride";
+const PAGE_SUB =
+  "Scheduled rides with local drivers across the metro. Prices and open seats are posted with each route.";
 
 type RideListing = {
   id: number;
@@ -68,33 +74,47 @@ const rides: RideListing[] = [
   },
 ];
 
+const ROW_STAGGER_MS = 80;
+const ROW_STAGGER_MAX_MS = 400;
+
+function rowDelay(index: number): CSSProperties {
+  return {
+    "--hero-delay": `${Math.min(index * ROW_STAGGER_MS, ROW_STAGGER_MAX_MS)}ms`,
+  } as CSSProperties;
+}
+
 export default function RidesPage() {
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
-      <h1 className="text-2xl font-bold">Book a ride</h1>
-      <p className="mt-2 max-w-2xl text-sm text-muted">
-        Scheduled rides with local drivers across the metro. Prices and open
-        seats are posted with each route.
-      </p>
-      <ul className="mt-8 space-y-4">
-        {rides.map((ride) => (
-          <li
-            key={ride.id}
-            className="card flex items-center justify-between gap-4"
-          >
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold">
-                {ride.from} → {ride.to}
-              </h2>
-              <p className="mt-1 text-sm text-muted">
-                {ride.day} · {ride.time}
-              </p>
-              <p className="text-sm text-muted">Driver {ride.driver}</p>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="font-semibold text-brand">{ride.price}</p>
-              <p className="text-xs text-muted">{ride.seats}</p>
-            </div>
+    <main className="mx-auto max-w-lg space-y-8 px-5 pb-10 pt-6">
+      <div className="hero-rise">
+        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+          {PAGE_TITLE}
+        </h1>
+        <p className="mt-2 text-[15px] text-muted">{PAGE_SUB}</p>
+      </div>
+      <ul className="space-y-2.5">
+        {rides.map((ride, index) => (
+          <li key={ride.id} className="hero-rise" style={rowDelay(index)}>
+            <article className="flex items-center gap-3.5 rounded-[16px] border border-border bg-surface p-3.5 shadow-card transition hover:-translate-y-0.5 hover:shadow-hover">
+              <CategoryTile category={ride.to} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-semibold">
+                  {`${ride.from} → ${ride.to}`}
+                </span>
+                <span className="mt-0.5 block truncate text-[13px] text-muted">
+                  {`${ride.day} · ${ride.time}`}
+                </span>
+                <span className="mt-0.5 block truncate text-[13px] text-muted">
+                  {`Driver ${ride.driver}`}
+                </span>
+              </span>
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <span className="text-[15px] font-semibold">{ride.price}</span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted">
+                  {ride.seats}
+                </span>
+              </span>
+            </article>
           </li>
         ))}
       </ul>

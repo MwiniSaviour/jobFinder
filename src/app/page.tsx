@@ -1,181 +1,201 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { Greeting } from "../components/Greeting";
+import { HeroCarousel } from "../components/HeroCarousel";
+import { SectionHeader } from "../components/SectionHeader";
+import { ServiceFilter, type HomeService } from "../components/ServiceFilter";
 import {
-  ArrowRightIcon,
   BriefcaseIcon,
   CarIcon,
-  SearchIcon,
-  SendIcon,
-  ShieldCheckIcon,
-  UserIcon,
+  SlidersIcon,
+  StarIcon,
   WrenchIcon,
 } from "../components/Icons";
+import { jobs, salaryLabel } from "../lib/jobs";
+
+const homeServices: HomeService[] = [
+  {
+    id: 1,
+    name: "Deep House Cleaning",
+    category: "Home",
+    price: "$95 flat",
+    duration: "3-4 hours",
+  },
+  {
+    id: 2,
+    name: "Appliance Repair",
+    category: "Repair",
+    price: "$60+",
+    duration: "1-2 hours",
+  },
+  {
+    id: 3,
+    name: "Bike Tune-Up",
+    category: "Maintenance",
+    price: "$40",
+    duration: "1 hour",
+  },
+  {
+    id: 4,
+    name: "IT Home Visit",
+    category: "Tech",
+    price: "$75",
+    duration: "2 hours",
+  },
+  {
+    id: 5,
+    name: "Moving Help",
+    category: "Moving",
+    price: "$25/hr",
+    duration: "2+ hours",
+  },
+  {
+    id: 6,
+    name: "Dog Walking",
+    category: "Pet",
+    price: "$20",
+    duration: "30 minutes",
+  },
+];
+
+const PAGE_TITLE = "What do you need today?";
+const PAGE_SUBTITLE =
+  "Jobs, home services, and rides with upfront pricing — pick where to start.";
+const SEARCH_PLACEHOLDER = "Search jobs";
+const SEARCH_INPUT_LABEL = "Search jobs";
+const SEARCH_BUTTON_LABEL = "Search";
+const JOBS_HEADER = "Featured jobs";
+const SERVICES_HEADER = "Top services near you";
+const TILE_JOB_LABEL = "Find a job";
+const TILE_JOB_SUB = `${jobs.length} open jobs`;
+const TILE_SERVICE_LABEL = "Hire a pro";
+const TILE_SERVICE_SUB = `${homeServices.length} top services`;
+const TILE_RIDE_LABEL = "Book a ride";
+const TILE_RIDE_SUB = "5 rides posted · from $10";
+
+const featuredJobs = jobs
+  .filter((job) => job.salary !== null)
+  .slice(0, 3);
 
 const heroDelay = (ms: number): CSSProperties =>
   ({ "--hero-delay": `${ms}ms` }) as CSSProperties;
 
 export default function HomePage() {
   return (
-    <main className="mx-auto w-full max-w-lg px-5">
-      <div className="flex items-center justify-between pt-5">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="grid size-9 place-items-center rounded-[10px] bg-brand shadow-card">
-            <SendIcon className="size-[18px] text-white" />
-          </span>
-          <span className="text-[17px] font-bold tracking-tight">JobFinder</span>
-        </Link>
-        <div className="flex items-center gap-1">
-          <Link
-            href="/jobs"
-            aria-label="Search jobs and services"
-            className="grid size-10 place-items-center rounded-full text-muted transition-colors hover:bg-surface-alt hover:text-foreground"
-          >
-            <SearchIcon className="size-5" />
-          </Link>
-          <Link
-            href="/profile"
-            aria-label="Your profile"
-            className="grid size-10 place-items-center rounded-full text-muted transition-colors hover:bg-surface-alt hover:text-foreground"
-          >
-            <UserIcon className="size-5" />
-          </Link>
-        </div>
+    <main className="mx-auto max-w-lg space-y-8 px-5 pb-10 pt-6">
+      <div>
+        <Greeting />
+        <h1 className="mt-2 text-[26px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+          {PAGE_TITLE}
+        </h1>
+        <p className="mt-2 text-[15px] text-muted">{PAGE_SUBTITLE}</p>
       </div>
 
-      <section className="mt-12">
-        <div className="hero-rise" style={heroDelay(0)}>
-          <Greeting />
-        </div>
-        <h1
-          className="hero-rise mt-2 text-balance text-[2.1rem] font-semibold leading-[1.12] tracking-[-0.02em]"
-          style={heroDelay(80)}
-        >
-          What do you need today?
-        </h1>
-        <p className="hero-rise mt-3 text-[15px] text-muted" style={heroDelay(160)}>
-          Jobs, home services, and rides with upfront pricing — pick where to start.
-        </p>
+      <div className="hero-rise" style={heroDelay(0)}>
+        <HeroCarousel />
+      </div>
 
-        <Link
-          href="/rides"
-          style={heroDelay(240)}
-          className="hero-rise group mt-9 flex items-center justify-between rounded-[20px] bg-brand p-5 text-white shadow-raised transition-colors hover:bg-brand-strong active:scale-[0.99]"
+      <form action="/jobs" method="get" className="flex gap-2.5">
+        <input
+          type="search"
+          name="q"
+          placeholder={SEARCH_PLACEHOLDER}
+          aria-label={SEARCH_INPUT_LABEL}
+          className="h-11 min-w-0 flex-1 rounded-full border border-border bg-surface px-4 text-[15px] text-foreground placeholder:text-muted focus:ring-2 focus:ring-brand/40"
+        />
+        <button
+          type="submit"
+          aria-label={SEARCH_BUTTON_LABEL}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-white transition-colors hover:bg-brand-strong"
         >
-          <span>
-            <span className="block font-semibold">Book a ride</span>
-            <span className="mt-0.5 block text-[13px] text-white">From $6.00 · ~3 min away</span>
+          <SlidersIcon className="size-5" />
+        </button>
+      </form>
+
+      <div className="hero-rise grid grid-cols-3 gap-3" style={heroDelay(80)}>
+        <Link
+          href="/jobs"
+          className="rounded-[16px] border border-border bg-surface p-3.5 shadow-card transition-shadow hover:shadow-hover"
+        >
+          <span className="flex size-11 items-center justify-center rounded-[14px] bg-brand-soft text-brand">
+            <BriefcaseIcon className="size-6" />
           </span>
-          <span className="grid size-11 place-items-center rounded-full bg-white/15 transition-colors group-hover:bg-white/25">
-            <ArrowRightIcon className="size-5 transition-transform group-hover:translate-x-1" />
+          <span className="mt-2.5 block text-[13px] font-semibold text-foreground">
+            {TILE_JOB_LABEL}
+          </span>
+          <span className="mt-0.5 block text-[11px] text-muted">
+            {TILE_JOB_SUB}
           </span>
         </Link>
-
         <Link
           href="/services"
-          style={heroDelay(320)}
-          className="hero-rise mt-3 flex items-center justify-between rounded-pill border border-border bg-surface px-5 py-3 shadow-card transition-shadow hover:border-brand/40 hover:shadow-hover"
+          className="rounded-[16px] border border-border bg-surface p-3.5 shadow-card transition-shadow hover:shadow-hover"
         >
-          <span>
-            <span className="block font-semibold">Find a pro</span>
-            <span className="mt-0.5 block text-[13px] text-muted">Vetted for your home errands</span>
+          <span className="flex size-11 items-center justify-center rounded-[14px] bg-brand-soft text-brand">
+            <WrenchIcon className="size-6" />
           </span>
-          <ArrowRightIcon className="size-4 text-muted" />
+          <span className="mt-2.5 block text-[13px] font-semibold text-foreground">
+            {TILE_SERVICE_LABEL}
+          </span>
+          <span className="mt-0.5 block text-[11px] text-muted">
+            {TILE_SERVICE_SUB}
+          </span>
         </Link>
+        <Link
+          href="/rides"
+          className="rounded-[16px] border border-border bg-surface p-3.5 shadow-card transition-shadow hover:shadow-hover"
+        >
+          <span className="flex size-11 items-center justify-center rounded-[14px] bg-brand-soft text-brand">
+            <CarIcon className="size-6" />
+          </span>
+          <span className="mt-2.5 block text-[13px] font-semibold text-foreground">
+            {TILE_RIDE_LABEL}
+          </span>
+          <span className="mt-0.5 block text-[11px] text-muted">
+            {TILE_RIDE_SUB}
+          </span>
+        </Link>
+      </div>
 
-        <div className="hero-rise mt-8 flex flex-wrap gap-2" style={heroDelay(400)}>
-          <Link
-            href="/services"
-            className="flex h-9 items-center gap-1.5 rounded-full bg-surface-alt px-3.5 text-[13px] font-medium transition-colors hover:bg-brand-soft hover:text-brand"
-          >
-            <WrenchIcon className="size-4" />
-            Services
-          </Link>
-          <Link
-            href="/jobs"
-            className="flex h-9 items-center gap-1.5 rounded-full bg-surface-alt px-3.5 text-[13px] font-medium transition-colors hover:bg-brand-soft hover:text-brand"
-          >
-            <BriefcaseIcon className="size-4" />
-            Jobs
-          </Link>
+      <section className="hero-rise space-y-3" style={heroDelay(160)}>
+        <SectionHeader title={JOBS_HEADER} action={{ href: "/jobs" }} />
+        <div className="space-y-3">
+          {featuredJobs.map((job) => (
+            <Link
+              key={job.id}
+              href="/jobs"
+              className="block rounded-[16px] border border-border bg-surface p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-hover"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="min-w-0 text-[15px] font-semibold text-foreground">
+                  {job.title}
+                </h3>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand">
+                  {salaryLabel(job.salary)}
+                </span>
+              </div>
+              <p className="mt-1 text-[13px] text-muted">
+                {job.company} · {job.location}
+              </p>
+              <div className="mt-2.5 flex items-center justify-between gap-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  {job.type}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <StarIcon className="size-3.5 text-accent" />
+                  <span className="text-[13px] font-semibold text-foreground">
+                    {job.rating}
+                  </span>
+                </span>
+              </div>
+            </Link>
+          ))}
         </div>
       </section>
 
-      <section className="mt-10 pb-12">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-          Trending near you
-        </h2>
-
-        <Link
-          href="/jobs"
-          className="group mt-3 block rounded-[20px] bg-surface p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-hover"
-        >
-          <div className="flex items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-soft text-[15px] font-bold text-brand">
-              FS
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate font-semibold">Fjord Studio</span>
-              <span className="block text-[13px] text-muted">Part-time · Hybrid · Lisbon</span>
-            </span>
-          </div>
-          <p className="mt-3 text-[14px] text-muted">UX designer for a growing product team.</p>
-          <div className="mt-4 flex items-center justify-between">
-            <span className="text-[13px] text-muted">
-              <span className="text-[17px] font-semibold tabular-nums text-brand">$19/hr</span> est.
-            </span>
-            <span className="rounded-pill bg-brand-soft px-3 py-1.5 text-[12.5px] font-semibold text-brand transition-colors group-hover:bg-brand group-hover:text-white">
-              Apply
-            </span>
-          </div>
-        </Link>
-
-        <Link
-          href="/services"
-          className="group mt-3 block rounded-[20px] border border-brand/15 bg-brand-soft p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-hover"
-        >
-          <div className="flex items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white shadow-card">
-              <WrenchIcon className="size-5 text-brand" />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate font-semibold">Everyday home help</span>
-              <span className="block text-[13px] text-muted">Plumbing · Assembly · Moving</span>
-            </span>
-          </div>
-          <p className="mt-3 text-[14px] text-muted">Handyman, deep cleaning, and more.</p>
-          <div className="mt-4 flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[13px] font-medium text-brand">
-              <ShieldCheckIcon className="size-4" />
-              Background-checked
-            </span>
-            <span className="rounded-pill bg-white px-3 py-1.5 text-[12.5px] font-semibold shadow-card">
-              From $45
-            </span>
-          </div>
-        </Link>
-
-        <Link
-          href="/rides"
-          className="group mt-3 block rounded-[20px] border border-border bg-surface p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-hover"
-        >
-          <div className="flex items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-surface-alt">
-              <CarIcon className="size-5 text-brand" />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate font-semibold">Need a ride later?</span>
-              <span className="block text-[13px] text-muted">Fare shown upfront, always</span>
-            </span>
-          </div>
-          <p className="mt-3 text-[14px] text-muted">Reserve a pickup up to 90 days ahead.</p>
-          <div className="mt-4 flex items-center justify-between">
-            <span className="text-[17px] font-semibold tabular-nums text-brand">From $6.00</span>
-            <span className="rounded-pill bg-surface-alt px-3 py-1.5 text-[12.5px] font-semibold text-brand transition-colors group-hover:bg-brand group-hover:text-white">
-              Reserve
-            </span>
-          </div>
-        </Link>
+      <section className="hero-rise space-y-3" style={heroDelay(240)}>
+        <SectionHeader title={SERVICES_HEADER} action={{ href: "/services" }} />
+        <ServiceFilter services={homeServices} />
       </section>
     </main>
   );
