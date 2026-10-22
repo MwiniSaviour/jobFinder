@@ -1,5 +1,18 @@
 import { DEFAULT_FILTERS } from "./jobs";
 import type { SortKey } from "./jobs";
+import { createCollectionStore } from "./store";
+import {
+  readLocalRaw,
+  readSessionRaw,
+  removeRaw,
+  writeRaw,
+  type StorageScope,
+} from "./storage";
+import {
+  createApplication,
+  parseApplications,
+  type ApplicationRecord,
+} from "./applications";
 
 export type Filters = {
   categories: string[];
@@ -8,25 +21,31 @@ export type Filters = {
 };
 
 export type JobsState = {
+  version: number;
   recents: string[];
-  appliedIds: number[];
   savedIds: number[];
-  filters: Filters;
+  applications: ApplicationRecord[];
 };
 
-const STORAGE_KEY = "jf:jobs";
-const CHANGE_EVENT = "jf:jobs-changed";
+export const STORAGE_KEY = "jf:jobs";
+export const FILTERS_STORAGE_KEY = "jf:jobs:filters";
+export const STATE_VERSION = 2;
+export const RECENTS_LIMIT = 20;
 
 export function freshState(): JobsState {
   return {
+    version: STATE_VERSION,
     recents: [],
-    appliedIds: [],
     savedIds: [],
-    filters: {
-      categories: [...DEFAULT_FILTERS.categories],
-      includeUnlisted: DEFAULT_FILTERS.includeUnlisted,
-      sort: DEFAULT_FILTERS.sort,
-    },
+    applications: [],
+  };
+}
+
+export function freshFilters(): Filters {
+  return {
+    categories: [...DEFAULT_FILTERS.categories],
+    includeUnlisted: DEFAULT_FILTERS.includeUnlisted,
+    sort: DEFAULT_FILTERS.sort,
   };
 }
 
@@ -38,49 +57,186 @@ const isNumberArray = (value: unknown): value is number[] =>
 
 const isSortKey = (value: unknown): value is SortKey => value === "new" || value === "pay";
 
-export function readJobsState(): JobsState {
-  if (typeof window === "undefined") return freshState();
+function parseFilters(raw: string | null): Filters {
+  if (!raw) return freshFilters();
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return freshState();
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return freshFilters();
+    const source = parsed as Record<string, unknown>;
+    return {
+      categories: isStringArray(source.categories) ? source.categories : [],
+      includeUnlisted:
+        typeof source.includeUnlisted === "boolean" ? source.includeUnlisted : false,
+      sort: isSortKey(source.sort) ? source.sort : "new",
+    };
+  } catch {
+    return freshFilters();
+  }
+}
+
+function parseJobsState(raw: string | null): JobsState {
+  if (!raw) return freshState();
+  try {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return freshState();
     const source = parsed as Record<string, unknown>;
-    const filterSource = (typeof source.filters === "object" && source.filters !== null
-      ? source.filters
-      : {}) as Record<string, unknown>;
-    return {
-      recents: isStringArray(source.recents) ? source.recents : [],
-      appliedIds: isNumberArray(source.appliedIds) ? source.appliedIds : [],
-      savedIds: isNumberArray(source.savedIds) ? source.savedIds : [],
-      filters: {
-        categories: isStringArray(filterSource.categories) ? filterSource.categories : [],
-        includeUnlisted:
-          typeof filterSource.includeUnlisted === "boolean" ? filterSource.includeUnlisted : false,
-        sort: isSortKey(filterSource.sort) ? filterSource.sort : "new",
-      },
-    };
+    const applications = parseApplications(
+      Array.isArray(source.applications) ? JSON.stringify(source.applications) : null,
+    );
+    const legacyApplied = isNumberArray(source.appliedIds) ? source.appliedIds : [];
+    const recents = isStringArray(source.recents)
+      ? source.recents.slice(0, RECENTS_LIMIT)
+      : [];
+    const savedIds = isNumberArray(source.savedIds) ? source.savedIds : [];
+    if (applications.length > 0) {
+      return { version: STATE_VERSION, recents, savedIds, applications };
+    }
+    if (legacyApplied.length > 0) {
+      const migrated = legacyApplied.map((jobId) => createApplication(jobId, null, ""));
+      return { version: STATE_VERSION, recents, savedIds, applications: migrated };
+    }
+    return { version: STATE_VERSION, recents, savedIds, applications: [] };
   } catch {
     return freshState();
   }
 }
 
-export function writeJobsState(state: JobsState): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  } catch {
-    if (typeof console !== "undefined") {
-      console.warn("JobFinder: session storage unavailable, keeping in-memory state");
+export const jobsStore = createCollectionStore<JobsState>(
+  STORAGE_KEY,
+  parseJobsState,
+  "persistent",
+);
+
+export const filtersStore = createCollectionStore<Filters>(
+  FILTERS_STORAGE_KEY,
+  parseFilters,
+  "session",
+);
+
+type LegacySource = {
+  scope: StorageScope;
+  key: string;
+  removable: boolean;
+  parsed: Record<string, unknown>;
+};
+
+function legacySources(): LegacySource[] {
+  const candidates: {
+    scope: StorageScope;
+    key: string;
+    removable: boolean;
+    raw: string | null;
+  }[] = [
+    { scope: "session", key: STORAGE_KEY, removable: true, raw: readSessionRaw(STORAGE_KEY) },
+    {
+      scope: "persistent",
+      key: `CapacitorStorage.${STORAGE_KEY}`,
+      removable: true,
+      raw: readLocalRaw(`CapacitorStorage.${STORAGE_KEY}`),
+    },
+    { scope: "persistent", key: STORAGE_KEY, removable: false, raw: readLocalRaw(STORAGE_KEY) },
+  ];
+  const sources: LegacySource[] = [];
+  for (const candidate of candidates) {
+    if (typeof candidate.raw !== "string" || candidate.raw.length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate.raw);
+    } catch {
+      continue;
     }
+    if (!parsed || typeof parsed !== "object") continue;
+    sources.push({ ...candidate, parsed: parsed as Record<string, unknown> });
+  }
+  return sources;
+}
+
+function hasJobsFields(source: LegacySource): boolean {
+  return (
+    isStringArray(source.parsed.recents) ||
+    isNumberArray(source.parsed.appliedIds) ||
+    isNumberArray(source.parsed.savedIds)
+  );
+}
+
+export async function migrateLegacyState(): Promise<void> {
+  const sources = legacySources();
+  if (sources.length === 0) return;
+
+  const hasJobs = readLocalRaw(STORAGE_KEY) !== null;
+  const hasFilters = readSessionRaw(FILTERS_STORAGE_KEY) !== null;
+
+  let jobsSource: LegacySource | null = null;
+  if (!hasJobs) {
+    for (const source of sources) {
+      const recents = isStringArray(source.parsed.recents)
+        ? source.parsed.recents.slice(0, RECENTS_LIMIT)
+        : [];
+      const savedIds = isNumberArray(source.parsed.savedIds) ? source.parsed.savedIds : [];
+      const appliedIds = isNumberArray(source.parsed.appliedIds) ? source.parsed.appliedIds : [];
+      const applications = appliedIds.map((jobId) => createApplication(jobId, null, ""));
+      writeRaw(
+        STORAGE_KEY,
+        JSON.stringify({ version: STATE_VERSION, recents, savedIds, applications }),
+        "persistent",
+      );
+      jobsSource = source;
+      break;
+    }
+  }
+
+  let filtersSource: LegacySource | null = null;
+  if (!hasFilters) {
+    const preferred =
+      sources.find((source) => typeof source.parsed.filters === "object" && source.parsed.filters !== null) ??
+      sources[0];
+    const filterSource = (typeof preferred.parsed.filters === "object" && preferred.parsed.filters !== null
+      ? preferred.parsed.filters
+      : {}) as Record<string, unknown>;
+    writeRaw(
+      FILTERS_STORAGE_KEY,
+      JSON.stringify({
+        categories: isStringArray(filterSource.categories) ? filterSource.categories : [],
+        includeUnlisted:
+          typeof filterSource.includeUnlisted === "boolean" ? filterSource.includeUnlisted : false,
+        sort: isSortKey(filterSource.sort) ? filterSource.sort : "new",
+      }),
+      "session",
+    );
+    filtersSource = preferred;
+  }
+
+  const consumed = new Set<LegacySource>();
+  if (jobsSource) consumed.add(jobsSource);
+  if (filtersSource) consumed.add(filtersSource);
+
+  for (const source of consumed) {
+    if (!source.removable) continue;
+    if (source !== jobsSource && hasJobsFields(source)) continue;
+    await removeRaw(source.key, source.scope);
   }
 }
 
+export function readJobsState(): JobsState {
+  return jobsStore.getSnapshot();
+}
+
+export function writeJobsState(state: JobsState): void {
+  jobsStore.write(state);
+}
+
 export function onJobsChange(callback: () => void): () => void {
-  if (typeof window === "undefined") return () => undefined;
-  window.addEventListener(CHANGE_EVENT, callback);
-  return () => {
-    window.removeEventListener(CHANGE_EVENT, callback);
-  };
+  return jobsStore.subscribe(callback);
+}
+
+export function readFilters(): Filters {
+  return filtersStore.getSnapshot();
+}
+
+export function writeFilters(filters: Filters): void {
+  filtersStore.write(filters);
+}
+
+export function onFiltersChange(callback: () => void): () => void {
+  return filtersStore.subscribe(callback);
 }

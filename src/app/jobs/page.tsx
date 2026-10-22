@@ -2,9 +2,7 @@
 
 import {
   useCallback,
-  useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -12,12 +10,14 @@ import {
 } from "react";
 import {
   ChevronLeftIcon,
+  CheckIcon,
   ClockIcon,
   FlagIcon,
   HeartIcon,
   ShareIcon,
   SlidersIcon,
   StarIcon,
+  XIcon,
 } from "../../components/Icons";
 import { FilterSheet } from "../../components/FilterSheet";
 import { SearchBar } from "../../components/SearchBar";
@@ -34,12 +34,24 @@ import {
   type JobListing,
 } from "../../lib/jobs";
 import {
+  freshFilters,
   freshState,
+  onFiltersChange,
   onJobsChange,
+  readFilters,
   readJobsState,
+  writeFilters,
   writeJobsState,
+  type Filters,
   type JobsState,
 } from "../../lib/state";
+import {
+  createApplication,
+  withdrawApplication,
+  isTerminalStatus,
+  APPLICATION_STATUS_COPY,
+  APPLICATION_STATUS_LABEL,
+} from "../../lib/applications";
 
 type View = "intake" | "results" | "detail";
 
@@ -47,31 +59,31 @@ const START_OPTIONS = ["Today", "This week", "Next few weeks"];
 const PROMISES = ["Pay listed upfront", "Reply within 3 days", "No account needed"];
 const SUGGESTIONS = ["Barista", "Delivery driver", "Warehouse"];
 
-const STORAGE_KEY = "jf:jobs";
-
 const SERVER_JOBS_SNAPSHOT = freshState();
+const SERVER_FILTERS_SNAPSHOT = freshFilters();
 
-let clientJobsSnapshot = SERVER_JOBS_SNAPSHOT;
-let clientJobsRaw: string | null = null;
+let toastTimer: number | null = null;
 
 function getJobsSnapshot(): JobsState {
   if (typeof window === "undefined") {
     return SERVER_JOBS_SNAPSHOT;
   }
-  try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    if (raw !== clientJobsRaw) {
-      clientJobsRaw = raw;
-      clientJobsSnapshot = raw === null ? freshState() : readJobsState();
-    }
-  } catch (error) {
-    console.warn("JobFinder: unable to read jobs snapshot", error);
-  }
-  return clientJobsSnapshot;
+  return readJobsState();
 }
 
 function getJobsServerSnapshot(): JobsState {
   return SERVER_JOBS_SNAPSHOT;
+}
+
+function getFiltersSnapshot(): Filters {
+  if (typeof window === "undefined") {
+    return SERVER_FILTERS_SNAPSHOT;
+  }
+  return readFilters();
+}
+
+function getFiltersServerSnapshot(): Filters {
+  return SERVER_FILTERS_SNAPSHOT;
 }
 
 let jobQuery = "";
@@ -114,6 +126,85 @@ function setJobQuery(next: string): void {
   }
   jobQuery = next;
   jobQueryListeners.forEach((listener) => listener());
+}
+
+let jobDetailId: number | null = null;
+let jobDetailIdSeeded = false;
+const jobDetailIdListeners = new Set<() => void>();
+
+function readUrlJobId(): number | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("id");
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return null;
+  return jobs.some((job) => job.id === parsed) ? parsed : null;
+}
+
+function getJobDetailIdSnapshot(): number | null {
+  return jobDetailId;
+}
+
+function getJobDetailIdServerSnapshot(): number | null {
+  return null;
+}
+
+function subscribeToJobDetailId(listener: () => void): () => void {
+  jobDetailIdListeners.add(listener);
+  if (!jobDetailIdSeeded) {
+    jobDetailIdSeeded = true;
+    const seeded = readUrlJobId();
+    if (seeded !== null && seeded !== jobDetailId) {
+      jobDetailId = seeded;
+      listener();
+    }
+  }
+  return () => {
+    jobDetailIdListeners.delete(listener);
+  };
+}
+
+function clearUrlJobId(): void {
+  if (jobDetailId === null) return;
+  jobDetailId = null;
+  jobDetailIdListeners.forEach((listener) => listener());
+}
+
+let jobCategory = "";
+const jobCategoryListeners = new Set<() => void>();
+
+function readUrlCategory(): string {
+  return typeof window === "undefined"
+    ? ""
+    : (new URLSearchParams(window.location.search).get("category")?.trim() ?? "");
+}
+
+function getJobCategorySnapshot(): string {
+  return jobCategory;
+}
+
+function getJobCategoryServerSnapshot(): string {
+  return "";
+}
+
+function subscribeToJobCategory(listener: () => void): () => void {
+  jobCategoryListeners.add(listener);
+  const seeded = readUrlCategory();
+  if (seeded !== jobCategory) {
+    jobCategory = seeded;
+    listener();
+  }
+  return () => {
+    jobCategoryListeners.delete(listener);
+  };
+}
+
+function setJobCategory(next: string): void {
+  if (next === jobCategory) {
+    return;
+  }
+  jobCategory = next;
+  jobCategoryListeners.forEach((listener) => listener());
 }
 
 type ResultCardProps = {
@@ -175,6 +266,11 @@ function ResultCard({ job, applied, entranceDelay, onOpen, onApply }: ResultCard
 
 export default function JobsPage() {
   const state = useSyncExternalStore(onJobsChange, getJobsSnapshot, getJobsServerSnapshot);
+  const filters = useSyncExternalStore(
+    onFiltersChange,
+    getFiltersSnapshot,
+    getFiltersServerSnapshot,
+  );
   const query = useSyncExternalStore(subscribeToJobQuery, getJobQuerySnapshot, getJobQueryServerSnapshot);
   const [view, setView] = useState<View>("intake");
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -185,25 +281,41 @@ export default function JobsPage() {
   const [startChoice, setStartChoice] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-    }
-  }, []);
 
   const showToast = useCallback((message: string) => {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
+    if (toastTimer !== null) {
+      window.clearTimeout(toastTimer);
     }
     setToast(message);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
+    toastTimer = window.setTimeout(() => setToast(null), 2200);
   }, []);
 
   const updateJobsState = useCallback((updater: (prev: JobsState) => JobsState) => {
     writeJobsState(updater(readJobsState()));
   }, []);
+
+  const updateFilters = useCallback((updater: (prev: Filters) => Filters) => {
+    writeFilters(updater(readFilters()));
+  }, []);
+
+  const appliedIds = useMemo(
+    () => state.applications.map((application) => application.jobId),
+    [state.applications],
+  );
+
+  const deepLinkId = useSyncExternalStore(
+    subscribeToJobDetailId,
+    getJobDetailIdSnapshot,
+    getJobDetailIdServerSnapshot,
+  );
+
+  const effectiveDetailId = detailId ?? deepLinkId;
+
+  const applicationRecord = useMemo(
+    () =>
+      state.applications.find((application) => application.jobId === effectiveDetailId) ?? null,
+    [effectiveDetailId, state.applications],
+  );
 
   const runSearch = useCallback(
     (raw: string) => {
@@ -240,8 +352,10 @@ export default function JobsPage() {
   );
 
   const goBack = useCallback(() => {
-    setView(returnTo);
-  }, [returnTo]);
+    const target = deepLinkId !== null && returnTo === "intake" ? "results" : returnTo;
+    clearUrlJobId();
+    setView(target);
+  }, [deepLinkId, returnTo]);
 
   const toggleSave = useCallback(
     (jobId: number) => {
@@ -257,39 +371,58 @@ export default function JobsPage() {
 
   const submitApply = useCallback(
     (jobId: number) => {
+      const existing = readJobsState().applications.find(
+        (application) => application.jobId === jobId,
+      );
+      if (existing && existing.status !== "withdrawn") return;
+      const record = createApplication(jobId, startChoice, note.trim());
       updateJobsState((prev) => ({
         ...prev,
-        appliedIds: prev.appliedIds.includes(jobId) ? prev.appliedIds : [...prev.appliedIds, jobId],
+        applications: [
+          ...prev.applications.filter((application) => application.jobId !== jobId),
+          record,
+        ],
       }));
       setApplying(false);
       showToast("Application sent.");
     },
-    [showToast, updateJobsState],
+    [note, showToast, startChoice, updateJobsState],
   );
 
-  const toggleCategoryFilter = useCallback(
-    (category: string) => {
+  const withdrawApplicationFor = useCallback(
+    (jobId: number) => {
       updateJobsState((prev) => ({
         ...prev,
-        filters: {
-          ...prev.filters,
-          categories: prev.filters.categories.includes(category)
-            ? prev.filters.categories.filter((item) => item !== category)
-            : [...prev.filters.categories, category],
-        },
+        applications: prev.applications.map((application) =>
+          application.jobId === jobId ? withdrawApplication(application) : application,
+        ),
       }));
-      setView("results");
     },
     [updateJobsState],
   );
 
+  const toggleCategoryFilter = useCallback(
+    (category: string) => {
+      updateFilters((prev) => ({
+        ...prev,
+        categories: prev.categories.includes(category)
+          ? prev.categories.filter((item) => item !== category)
+          : [...prev.categories, category],
+      }));
+      setView("results");
+    },
+    [updateFilters],
+  );
+
   const clearFilters = useCallback(() => {
-    updateJobsState((prev) => ({
-      ...prev,
-      filters: { ...prev.filters, categories: [], includeUnlisted: false, sort: "new" },
+    updateFilters(() => ({
+      categories: [],
+      includeUnlisted: false,
+      sort: "new",
     }));
     setJobQuery("");
-  }, [updateJobsState]);
+    setJobCategory("");
+  }, [updateFilters]);
 
   const openSheet = useCallback(() => {
     setSheetOpen(true);
@@ -318,6 +451,12 @@ export default function JobsPage() {
     [showToast],
   );
 
+  const urlCategory = useSyncExternalStore(
+    subscribeToJobCategory,
+    getJobCategorySnapshot,
+    getJobCategoryServerSnapshot,
+  );
+
   const { results, activeFilterCount } = useMemo(() => {
     const q = query.toLowerCase();
     const filtered = jobs.filter((job) => {
@@ -327,26 +466,36 @@ export default function JobsPage() {
           return false;
         }
       }
-      if (state.filters.categories.length > 0 && !state.filters.categories.includes(job.category)) {
+      if (urlCategory && urlCategory !== job.category) {
         return false;
       }
-      if (!state.filters.includeUnlisted && job.salary === null) {
+      if (filters.categories.length > 0 && !filters.categories.includes(job.category)) {
+        return false;
+      }
+      if (!filters.includeUnlisted && job.salary === null) {
         return false;
       }
       return true;
     });
     const sorted =
-      state.filters.sort === "pay"
+      filters.sort === "pay"
         ? [...filtered].sort((a, b) => (b.salary?.amount ?? -1) - (a.salary?.amount ?? -1))
         : filtered;
     return {
       results: sorted,
-      activeFilterCount: state.filters.categories.length + (state.filters.includeUnlisted ? 1 : 0),
+      activeFilterCount:
+        filters.categories.length +
+        (filters.includeUnlisted ? 1 : 0) +
+        (urlCategory && !filters.categories.includes(urlCategory) ? 1 : 0),
     };
-  }, [state, query]);
+  }, [filters, query, urlCategory]);
 
-  const detailJob = detailId === null ? null : (jobs.find((job) => job.id === detailId) ?? null);
-  const effectiveView = view === "intake" && query !== "" ? "results" : view;
+  const detailJob =
+    effectiveDetailId === null
+      ? null
+      : (jobs.find((job) => job.id === effectiveDetailId) ?? null);
+  const effectiveView =
+    view === "intake" && (query !== "" || urlCategory !== "") ? "results" : view;
 
   const renderIntake = () => (
     <div className="flex flex-col gap-5 pb-4">
@@ -391,15 +540,17 @@ export default function JobsPage() {
       <section className="space-y-3">
         <SectionHeader title="Browse all openings" />
         <div className="space-y-3">
-          {jobs.map((job) => (
-            <ResultCard
-              key={job.id}
-              job={job}
-              applied={state.appliedIds.includes(job.id)}
-              onOpen={() => openDetail(job.id, "intake")}
-              onApply={() => startApply(job.id, "intake")}
-            />
-          ))}
+          {jobs
+            .filter((job) => job.salary !== null || filters.includeUnlisted)
+            .map((job) => (
+              <ResultCard
+                key={job.id}
+                job={job}
+                applied={appliedIds.includes(job.id)}
+                onOpen={() => openDetail(job.id, "intake")}
+                onApply={() => startApply(job.id, "intake")}
+              />
+            ))}
         </div>
       </section>
     </div>
@@ -413,25 +564,33 @@ export default function JobsPage() {
           <SlidersIcon className="size-3.5" />
           Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
         </Chip>
-        {state.filters.sort === "pay" ? (
+        {filters.sort === "pay" ? (
           <span className="rounded-full border border-border bg-surface px-3 py-1 text-[12px] font-medium text-muted">
-            {SORT_LABELS[state.filters.sort]}
+            {SORT_LABELS[filters.sort]}
           </span>
         ) : null}
-        {state.filters.includeUnlisted ? (
+        {filters.includeUnlisted ? (
           <Chip
             active
-            onClick={() => updateJobsState((prev) => ({ ...prev, filters: { ...prev.filters, includeUnlisted: false } }))}
+            onClick={() => updateFilters((prev) => ({ ...prev, includeUnlisted: false }))}
           >
-            Unlisted pay ✕
+            Unlisted pay
+            <XIcon className="size-3.5" />
           </Chip>
         ) : null}
-        {state.filters.categories.map((category) => (
+        {urlCategory ? (
+          <Chip active onClick={() => setJobCategory("")}>
+            <XIcon className="size-3.5" />
+            {urlCategory}
+          </Chip>
+        ) : null}
+        {filters.categories.map((category) => (
           <Chip key={category} active onClick={() => toggleCategoryFilter(category)}>
-            {category} ✕
+            {category}
+            <XIcon className="size-3.5" />
           </Chip>
         ))}
-        {activeFilterCount > 0 || query ? (
+        {activeFilterCount > 0 || query || urlCategory !== "" ? (
           <button
             className="rounded-full px-2 py-1.5 text-[12px] font-semibold text-muted hover:text-brand hover:underline"
             onClick={clearFilters}
@@ -441,7 +600,7 @@ export default function JobsPage() {
         ) : null}
       </div>
       <p aria-live="polite" className="text-[13px] text-muted">
-        {results.length} {results.length === 1 ? "job" : "jobs"} · {SORT_LABELS[state.filters.sort]}
+        {results.length} {results.length === 1 ? "job" : "jobs"} · {SORT_LABELS[filters.sort]}
       </p>
       {results.length === 0 ? (
         <div className="rounded-[16px] border border-border bg-surface p-6 text-center shadow-card">
@@ -467,7 +626,7 @@ export default function JobsPage() {
             <ResultCard
               key={job.id}
               job={job}
-              applied={state.appliedIds.includes(job.id)}
+              applied={appliedIds.includes(job.id)}
               entranceDelay={index < 6 ? index * 60 : undefined}
               onOpen={() => openDetail(job.id, "results")}
               onApply={() => startApply(job.id, "results")}
@@ -484,7 +643,7 @@ export default function JobsPage() {
     }
     const job = detailJob;
     const saved = state.savedIds.includes(job.id);
-    const applied = state.appliedIds.includes(job.id);
+    const applied = applicationRecord !== null;
 
     return (
       <div className="flex flex-col gap-4 pb-4">
@@ -511,8 +670,9 @@ export default function JobsPage() {
               Pay not listed
             </span>
           )}
-          <span className="text-sm text-muted">
-            ★ {job.rating.toFixed(1)} ({job.reviews} reviews)
+          <span className="flex items-center gap-1.5 text-sm text-muted">
+            <StarIcon className="size-3.5 text-accent" />
+            {`${job.rating.toFixed(1)} (${job.reviews} reviews)`}
           </span>
         </div>
         <PromiseStrip items={[...PROMISES]} />
@@ -520,10 +680,27 @@ export default function JobsPage() {
           <h2 className="text-[15px] font-semibold">About this job</h2>
           <p className="mt-2 text-[13px] text-muted">{job.blurb}</p>
         </section>
-        {applied ? (
-          <p className="rounded-[16px] bg-brand-soft px-4 py-3 text-sm font-semibold text-brand">
-            Application sent.
-          </p>
+        {applicationRecord ? (
+          <div className="rounded-[16px] bg-brand-soft px-4 py-3">
+            <p className="text-sm font-semibold text-brand">
+              {APPLICATION_STATUS_LABEL[applicationRecord.status]}
+            </p>
+            <p className="mt-1 text-[13px] text-foreground">
+              {APPLICATION_STATUS_COPY[applicationRecord.status]}
+            </p>
+            {!isTerminalStatus(applicationRecord.status) ? (
+              <button
+                type="button"
+                onClick={() => {
+                  withdrawApplicationFor(job.id);
+                  showToast("Application withdrawn.");
+                }}
+                className="mt-2.5 rounded-full border border-brand bg-surface px-3.5 py-1.5 text-[12px] font-semibold text-brand transition-colors hover:border-brand/50"
+              >
+                Withdraw application
+              </button>
+            ) : null}
+          </div>
         ) : null}
         {!applied && applying ? (
           <section className="rounded-[16px] border border-border bg-surface p-4 shadow-card">
@@ -584,8 +761,9 @@ export default function JobsPage() {
         ) : null}
         <div className="sticky bottom-20 z-30 mt-6">
           {applied ? (
-            <div className="flex items-center justify-center rounded-full bg-brand-soft px-5 py-3 text-sm font-semibold text-brand">
-              ✓ Applied
+            <div className="flex items-center justify-center gap-2 rounded-full bg-brand-soft px-5 py-3 text-sm font-semibold text-brand">
+              <CheckIcon className="size-4" />
+              {applied}
             </div>
           ) : applying ? (
             <button
@@ -618,7 +796,7 @@ export default function JobsPage() {
   };
 
   let body: ReactNode;
-  if (view === "detail") {
+  if (view === "detail" || (deepLinkId !== null && detailId === null)) {
     body = renderDetail();
   } else if (effectiveView === "results") {
     body = renderResults();
@@ -628,11 +806,11 @@ export default function JobsPage() {
 
   return (
     <>
-      <main className="relative mx-auto w-full max-w-md px-6 pb-24 pt-6">{body}</main>
+      <main className="relative mx-auto max-w-lg px-5 pb-24 pt-6">{body}</main>
       <FilterSheet
         open={sheetOpen}
-        filters={state.filters}
-        onChange={(next) => updateJobsState((prev) => ({ ...prev, filters: next }))}
+        filters={filters}
+        onChange={(next) => updateFilters(() => next)}
         onClose={closeSheet}
       />
       {toast ? (

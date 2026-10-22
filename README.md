@@ -34,3 +34,19 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Run as Android app (Capacitor)
+
+The app exports to static files (`next.config.ts` sets `output: "export"`) and ships inside a native Android WebView via [Capacitor](https://capacitorjs.com). No server is required at runtime — all job data lives in browser (WebView) storage.
+
+Requirements: Node.js, Java JDK, and Android Studio (with the Android SDK). Android Studio is only needed to build/emulate the Android app, not to edit the web app.
+
+```bash
+npm install
+npm run cap:build
+npm run cap:open
+```
+
+`cap:build` runs `next build` (producing `out/`) and syncs it into `android/`; `cap:open` opens the native project in Android Studio. Press **Run** there to launch on an emulator or device. iOS requires a Mac: `npm install @capacitor/ios`, `npx cap add ios`, then open in Xcode.
+
+Re-run `npm run cap:build` after any source change and sync again so the native project picks up the new build output.

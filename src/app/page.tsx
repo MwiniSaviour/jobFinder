@@ -9,54 +9,19 @@ import {
   CarIcon,
   SlidersIcon,
   StarIcon,
+  UserIcon,
   WrenchIcon,
 } from "../components/Icons";
 import { jobs, salaryLabel } from "../lib/jobs";
+import { SERVICE_LISTINGS } from "../lib/services";
 
-const homeServices: HomeService[] = [
-  {
-    id: 1,
-    name: "Deep House Cleaning",
-    category: "Home",
-    price: "$95 flat",
-    duration: "3-4 hours",
-  },
-  {
-    id: 2,
-    name: "Appliance Repair",
-    category: "Repair",
-    price: "$60+",
-    duration: "1-2 hours",
-  },
-  {
-    id: 3,
-    name: "Bike Tune-Up",
-    category: "Maintenance",
-    price: "$40",
-    duration: "1 hour",
-  },
-  {
-    id: 4,
-    name: "IT Home Visit",
-    category: "Tech",
-    price: "$75",
-    duration: "2 hours",
-  },
-  {
-    id: 5,
-    name: "Moving Help",
-    category: "Moving",
-    price: "$25/hr",
-    duration: "2+ hours",
-  },
-  {
-    id: 6,
-    name: "Dog Walking",
-    category: "Pet",
-    price: "$20",
-    duration: "30 minutes",
-  },
-];
+const homeServices: HomeService[] = SERVICE_LISTINGS.map((service) => ({
+  id: service.id,
+  name: service.name,
+  category: service.category,
+  price: service.priceLabel,
+  duration: service.duration,
+}));
 
 const PAGE_TITLE = "What do you need today?";
 const PAGE_SUBTITLE =
@@ -83,12 +48,22 @@ const heroDelay = (ms: number): CSSProperties =>
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-lg space-y-8 px-5 pb-10 pt-6">
-      <div>
-        <Greeting />
-        <h1 className="mt-2 text-[26px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-          {PAGE_TITLE}
-        </h1>
-        <p className="mt-2 text-[15px] text-muted">{PAGE_SUBTITLE}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Greeting />
+          <h1 className="mt-2 text-[26px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+            {PAGE_TITLE}
+          </h1>
+          <p className="mt-2 text-[15px] text-muted">{PAGE_SUBTITLE}</p>
+        </div>
+        <Link
+          href="/profile"
+          aria-label="Your profile"
+          title="Your profile"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-brand-soft text-brand"
+        >
+          <UserIcon className="size-5" />
+        </Link>
       </div>
 
       <div className="hero-rise" style={heroDelay(0)}>

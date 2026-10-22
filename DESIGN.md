@@ -35,10 +35,23 @@ Warm paper: the shell is a soft paper surface (`#f3f1ea`) with white cards (`bg-
 
 ## Pinned constraints
 
-- BottomNav: five slots (Home, Jobs, **Ride FAB**, Services, Profile), fixed `inset-x-0 bottom-0`, `border-t border-border bg-white/85 shadow-nav backdrop-blur-md`; inner grid `max-w-lg grid-cols-5 px-4`; active tab is `text-brand font-semibold` with no filled-icon variants; the raised Ride FAB is always teal (`bg-brand`, `shadow-raised`, `-mt-6`, `size-14`) regardless of active state.
+- BottomNav: five slots (Home, Jobs, **Ride FAB**, Services, Categories), fixed `inset-x-0 bottom-0`, `border-t border-border bg-white/85 shadow-nav backdrop-blur-md`; inner grid `max-w-lg grid-cols-5 px-4`; active tab is `text-brand font-semibold` with no filled-icon variants; the raised Ride FAB is always teal (`bg-brand`, `shadow-raised`, `-mt-6`, `size-14`) regardless of active state.
 - Report bodies sit on `body { pb-[5.5rem] }` (layout.tsx) so lists never hide under the fixed nav; do not re-add per-page padding hacks.
 - Cards use `bg-surface border border-border rounded-[22px] shadow-card` — one elevation step only; hover lifts to `shadow-hover border-brand/30`.
 - Every interactive element gets `transition-colors`; focus is always the global `:focus-visible` ring (`outline 2px --color-brand/60 offset 2px`) — no per-component ring overrides.
 - Icon set is hand-drawn in `Icons.tsx` on `viewBox 0 0 24 24`, stroke ~1.8 (2 when active), round caps/joins, `aria-hidden` — never swap in a library.
 - Warm-paper tokens are the source of truth in `globals.css`; no `@theme` token may be duplicated in component files (inline hex values allowed only for CategoryTile tints, which Tailwind cannot express as data-driven tokens).
 - No emoji, no fake avatars or review counts; ratings appear only where real review data exists (yellow star uses `--color-accent`); all human-facing copy lives in string constants or props.
+
+## Categories library + screen
+
+- `src/lib/categories.ts` — canonical category registry. `CategoryDef` = `{ name: string; icon }` with hand-drawn icons from `Icons.tsx`. `JOB_CATEGORIES` (12: Delivery, Food & drink, Tech, Driving, Education, Warehouse, Retail, Cleaning, Office, Security, Caregiving, Events) and `SERVICE_CATEGORIES` (10: Home, Repair, Maintenance, Tech, Moving, Pet, Laundry & Dry Cleaning, Car Wash, Catering, Beauty & Wellness). `src/lib/jobs.ts` derives its `CATEGORIES` filter list from `JOB_CATEGORIES` — never hand-edit that list.
+- Icons added to `Icons.tsx`: CategoriesGridIcon (nav tab), XIcon (chip remove), Coffee, Monitor, GraduationCap, Package, ShoppingBag, Sparkles, Clipboard, Paw.
+- Home header now carries a profile avatar link (`size-10` round tile, `bg-brand-soft text-brand`, `aria-label="Your profile"`) → `/profile`.
+- `/categories` — header (back chevron via `router.back()`, title "All categories", subtitle), then two `CategorySection`s (Jobs, Services): a full-width "All jobs"/"All services" row card (icon tile `bg-brand-soft text-brand` + trailing arrow) above a `grid grid-cols-3` of icon cards. Every card navigates to `/jobs?category=…` or `/services?category=…` (name `encodeURIComponent`-ed); +40ms per-card hero-rise stagger.
+- Seeds expanded: jobs id 8–13 (Retail, Cleaning, Office, Security, Caregiving, Events — new categories, so `CategoryTile` falls back to its letter monogram), services id 7–12 (Laundry & Dry Cleaning, Car Wash, Catering, Beauty & Wellness, Pet, Maintenance), mirrored on the home page.
+
+## `?category=` deep links
+
+- Both listing screens preselect their category from the URL query: `/jobs?category=Delivery`, `/services?category=Car%20Wash`. On `/jobs` a module-scope `useSyncExternalStore` store seeds `?category` once (empty server snapshot) and filters the results memo + renders a removable `Chip` (XIcon) ahead of the category-filter chips; Clear all also clears it. On `/services` (server component) the query filters the list directly; a chip row of `Link`s built with `chipClass` marks the active category, and an empty match renders "No services found." + "Show all services".
+- `ServiceFilter` rows now link to their own category (`/services?category=…`) instead of the bare list.

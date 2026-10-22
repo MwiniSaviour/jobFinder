@@ -7,11 +7,13 @@ export function SearchBar({
   onSearch,
   placeholder = "Search jobs",
   initialValue = "",
+  ariaLabel,
   className,
 }: {
   onSearch: (query: string) => void;
   placeholder?: string;
   initialValue?: string;
+  ariaLabel?: string;
   className?: string;
 }) {
   const [value, setValue] = useState(initialValue);
@@ -35,7 +37,7 @@ export function SearchBar({
         value={value}
         onChange={(event) => setValue(event.target.value)}
         placeholder={placeholder}
-        aria-label="Search jobs"
+        aria-label={ariaLabel ?? placeholder}
         className="h-12 w-full rounded-[18px] border border-border bg-surface pl-12 pr-12 text-[15px] outline-none transition-colors placeholder:text-muted focus:border-brand"
       />
       <span className="pointer-events-none absolute left-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-alt text-muted">

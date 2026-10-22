@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { ApplicationsList } from "../../components/ApplicationsList";
+import { BookingsList } from "../../components/BookingsList";
 import { ChevronRightIcon, UserIcon } from "../../components/Icons";
+import { RidesList } from "../../components/RidesList";
 import { SectionHeader } from "../../components/SectionHeader";
 
 export const metadata: Metadata = {
@@ -11,8 +13,10 @@ export const metadata: Metadata = {
 
 const PAGE_TITLE = "Your profile";
 const PAGE_SUB =
-  "Sign-in, saved searches, and booking history arrive in a release right after this one.";
-const APPLICATIONS_TITLE = "My applications";
+  "Your applications, bookings, and rides stay on this device until you sign in.";
+const APPLICATIONS_TITLE = "Applications";
+const BOOKINGS_TITLE = "Bookings";
+const RIDES_TITLE = "Rides";
 const HOME_LABEL = "Back to home";
 const HOME_HREF = "/";
 const SECTION_STAGGER_MS = 80;
@@ -42,6 +46,14 @@ export default function ProfilePage() {
         <ApplicationsList />
       </section>
       <section className="hero-rise" style={sectionDelay(2)}>
+        <SectionHeader title={BOOKINGS_TITLE} />
+        <BookingsList />
+      </section>
+      <section className="hero-rise" style={sectionDelay(3)}>
+        <SectionHeader title={RIDES_TITLE} />
+        <RidesList />
+      </section>
+      <section className="hero-rise" style={sectionDelay(4)}>
         <div className="divide-y divide-border overflow-hidden rounded-[16px] border border-border shadow-card">
           <Link
             href={HOME_HREF}

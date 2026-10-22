@@ -1,3 +1,5 @@
+import { JOB_CATEGORIES } from "./categories";
+
 export type SortKey = "new" | "pay";
 
 export type Salary = {
@@ -26,7 +28,7 @@ export function salaryLabel(salary: Salary): string {
   return `${salary.from ? "From " : ""}${hourly}${salary.est ? " est." : ""}`;
 }
 
-export const CATEGORIES = ["Delivery", "Food & drink", "Tech", "Driving", "Education", "Warehouse"];
+export const CATEGORIES = JOB_CATEGORIES.map((category) => category.name);
 
 export const DEFAULT_FILTERS = {
   categories: [] as string[],
@@ -130,5 +132,83 @@ export const jobs: JobListing[] = [
     salary: null,
     rating: 4.5,
     reviews: 33,
+  },
+  {
+    id: 8,
+    title: "Retail Associate",
+    company: "Greenline Market",
+    location: "Maplewood",
+    type: "Part-time",
+    posted: "1 week ago",
+    blurb: "Stock shelves and help shoppers during evening and weekend shifts.",
+    category: "Retail",
+    salary: { amount: 15.5 },
+    rating: 4.4,
+    reviews: 87,
+  },
+  {
+    id: 9,
+    title: "Office Cleaner",
+    company: "SparkleWorks",
+    location: "Downtown",
+    type: "Part-time",
+    posted: "4 days ago",
+    blurb: "Light cleaning of offices after hours. Supplies and training provided.",
+    category: "Cleaning",
+    salary: { amount: 16 },
+    rating: 4.5,
+    reviews: 56,
+  },
+  {
+    id: 10,
+    title: "Data Entry Clerk",
+    company: "LedgerWorks",
+    location: "Remote",
+    type: "Remote",
+    posted: "6 days ago",
+    blurb: "Enter invoices and receipts into our ledger system with steady weekly hours.",
+    category: "Office",
+    salary: { est: true, amount: 18 },
+    rating: 4.6,
+    reviews: 29,
+  },
+  {
+    id: 11,
+    title: "Security Guard",
+    company: "Northline Security",
+    location: "Convention Center",
+    type: "Full-time",
+    posted: "5 days ago",
+    blurb: "Overnight patrols and visitor check-ins at the convention center.",
+    category: "Security",
+    salary: { from: true, amount: 17 },
+    rating: 4.3,
+    reviews: 102,
+  },
+  {
+    id: 12,
+    title: "Caregiving Companion",
+    company: "WarmHand Home Care",
+    location: "Riverside",
+    type: "Part-time",
+    posted: "1 day ago",
+    blurb: "Spend afternoons with seniors: conversation, walks, and light meal prep.",
+    category: "Caregiving",
+    salary: { amount: 17.5 },
+    rating: 4.8,
+    reviews: 64,
+  },
+  {
+    id: 13,
+    title: "Event Setup Crew",
+    company: "Fairline Events",
+    location: "Fairgrounds",
+    type: "Weekend",
+    posted: "1 day ago",
+    blurb: "Set up booths, chairs, and signage before weekend festivals and fairs.",
+    category: "Events",
+    salary: null,
+    rating: 4.6,
+    reviews: 21,
   },
 ];

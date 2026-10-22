@@ -18,7 +18,7 @@ function greetingFor(hour: number): string {
   return "Good evening";
 }
 
-const SERVER_HOUR = Number.NaN;
+const SERVER_HOUR = -1;
 
 export function Greeting() {
   const hour = useSyncExternalStore(
@@ -26,7 +26,7 @@ export function Greeting() {
     () => new Date().getHours(),
     () => SERVER_HOUR,
   );
-  const greeting = Number.isNaN(hour) ? "\u00a0" : greetingFor(hour);
+  const greeting = hour < 0 ? "\u00a0" : greetingFor(hour);
 
   return <p className="text-[13px] font-semibold text-brand">{greeting}</p>;
 }

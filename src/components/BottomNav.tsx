@@ -6,8 +6,8 @@ import type { ComponentType, SVGProps } from "react";
 import {
   BriefcaseIcon,
   CarIcon,
+  CategoriesGridIcon,
   HomeIcon,
-  UserIcon,
   WrenchIcon,
 } from "./Icons";
 
@@ -55,7 +55,7 @@ export function BottomNav() {
           <span className="mt-0.5 text-[11px] font-semibold text-brand">Ride</span>
         </Link>
         <NavLink href="/services" label="Services" icon={WrenchIcon} />
-        <NavLink href="/profile" label="Profile" icon={UserIcon} />
+        <NavLink href="/categories" label="Categories" icon={CategoriesGridIcon} />
       </div>
     </nav>
   );

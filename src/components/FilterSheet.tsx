@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CATEGORIES, DEFAULT_FILTERS, SORT_LABELS, type SortKey } from "../lib/jobs";
 import type { Filters } from "../lib/state";
 import { Chip } from "./Chip";
+import { XIcon } from "./Icons";
 
 const SECTION_LABEL = "text-xs font-semibold uppercase tracking-wide text-muted";
 
@@ -86,9 +87,7 @@ function FilterSheetContent({
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-alt text-muted transition-colors hover:text-foreground"
             onClick={onClose}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
+            <XIcon className="size-4" />
           </button>
         </div>
         <div className="max-h-[70dvh] overflow-y-auto px-5 pb-4">

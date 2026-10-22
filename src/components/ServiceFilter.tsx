@@ -46,7 +46,7 @@ export function ServiceFilter({ services }: { services: HomeService[] }) {
         {shown.map((service) => (
           <li key={service.id}>
             <Link
-              href="/services"
+              href={`/services?category=${encodeURIComponent(service.category)}`}
               className="flex items-center gap-3.5 rounded-[16px] border border-border bg-surface p-3.5 shadow-card transition hover:-translate-y-0.5 hover:shadow-hover"
             >
               <CategoryTile category={service.category} />
