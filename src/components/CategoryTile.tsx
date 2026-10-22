@@ -27,7 +27,7 @@ const DEFAULT_TINT = "#eff6ff";
 
 type CategoryTileProps = {
   category: string;
-  size?: "md" | "lg";
+  size?: "sm" | "md" | "lg";
   className?: string;
 };
 
@@ -36,18 +36,23 @@ export function CategoryTile({ category, size = "md", className }: CategoryTileP
   const Icon = ICONS[key];
   const tint = TINTS[key] ?? DEFAULT_TINT;
   const large = size === "lg";
+  const small = size === "sm";
 
   return (
     <span
       className={`relative flex items-center justify-center shrink-0 ${
-        large ? "w-[72px] h-[72px] rounded-[18px]" : "w-14 h-14 rounded-[14px]"
+        large
+          ? "w-[72px] h-[72px] rounded-[18px]"
+          : small
+            ? "w-12 h-12 rounded-[12px]"
+            : "w-14 h-14 rounded-[14px]"
       } ${className ?? ""}`}
       style={{ backgroundColor: tint }}
     >
       {Icon ? (
-        <Icon className={`text-brand ${large ? "h-8 w-8" : "h-6 w-6"}`} />
+        <Icon className={`text-brand ${large ? "h-8 w-8" : small ? "h-5 w-5" : "h-6 w-6"}`} />
       ) : (
-        <span className={`font-semibold text-brand ${large ? "text-2xl" : "text-lg"}`}>
+        <span className={`font-semibold text-brand ${large ? "text-2xl" : small ? "text-base" : "text-lg"}`}>
           {category.trim().charAt(0).toUpperCase()}
         </span>
       )}

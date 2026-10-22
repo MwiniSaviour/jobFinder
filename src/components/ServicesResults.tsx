@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 import { Chip } from "./Chip";
+import { ChipRow } from "./FilterChips";
 import { CategoryTile } from "./CategoryTile";
 import { ServiceBookingFlow } from "./ServiceBookingFlow";
 import { CheckIcon, ClockIcon, StarIcon } from "./Icons";
@@ -183,7 +184,7 @@ export function ServicesResults({ services }: { services: ServiceListing[] }) {
               ariaLabel={SEARCH_LABEL}
             />
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <ChipRow label="Service categories" className="mt-4">
             <Chip active={urlCategory === ""} onClick={() => setServiceCategory("")}>
               {ALL_SERVICES_LABEL}
             </Chip>
@@ -196,7 +197,7 @@ export function ServicesResults({ services }: { services: ServiceListing[] }) {
                 {category.name}
               </Chip>
             ))}
-          </div>
+          </ChipRow>
         </div>
 
         {filtered.length === 0 ? (

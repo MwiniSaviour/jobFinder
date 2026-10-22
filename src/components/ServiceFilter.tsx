@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { chipClass } from "./Chip";
+import { ChipRow } from "./FilterChips";
 import { CategoryTile } from "./CategoryTile";
 
 export type HomeService = {
@@ -29,7 +30,7 @@ export function ServiceFilter({ services }: { services: HomeService[] }) {
 
   return (
     <div className="space-y-3">
-      <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 pb-1">
+      <ChipRow label="Service categories">
         {categories.map((name) => (
           <button
             key={name}
@@ -41,7 +42,7 @@ export function ServiceFilter({ services }: { services: HomeService[] }) {
             {name}
           </button>
         ))}
-      </div>
+      </ChipRow>
       <ul className="space-y-3">
         {shown.map((service) => (
           <li key={service.id}>

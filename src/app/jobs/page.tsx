@@ -25,6 +25,7 @@ import { SavedListRow } from "../../components/SavedListRow";
 import { PromiseStrip } from "../../components/PromiseStrip";
 import { Chip } from "../../components/Chip";
 import { CategoryTile } from "../../components/CategoryTile";
+import { CategoryTileRow, ChipRow } from "../../components/FilterChips";
 import { SectionHeader } from "../../components/SectionHeader";
 import {
   CATEGORIES,
@@ -524,18 +525,7 @@ export default function JobsPage() {
       </section>
       <section className="space-y-3">
         <SectionHeader title="Categories" />
-        <div className="grid grid-cols-3 gap-3">
-          {CATEGORIES.map((category) => (
-            <button
-              key={category}
-              className="flex flex-col items-center gap-2"
-              onClick={() => toggleCategoryFilter(category)}
-            >
-              <CategoryTile category={category} size="lg" />
-              <span className="text-xs font-medium text-muted">{category}</span>
-            </button>
-          ))}
-        </div>
+        <CategoryTileRow categories={CATEGORIES} onSelect={toggleCategoryFilter} />
       </section>
       <section className="space-y-3">
         <SectionHeader title="Browse all openings" />
@@ -559,13 +549,13 @@ export default function JobsPage() {
   const renderResults = () => (
     <div className="flex flex-col gap-4 pb-4">
       <SearchBar onSearch={runSearch} initialValue={query} placeholder="Search job title or company" />
-      <div className="flex flex-wrap items-center gap-2">
+      <ChipRow label="Filters">
         <Chip active={activeFilterCount > 0} onClick={openSheet}>
           <SlidersIcon className="size-3.5" />
           Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
         </Chip>
         {filters.sort === "pay" ? (
-          <span className="rounded-full border border-border bg-surface px-3 py-1 text-[12px] font-medium text-muted">
+          <span className="shrink-0 rounded-full border border-border bg-surface px-3 py-1 text-[12px] font-medium text-muted">
             {SORT_LABELS[filters.sort]}
           </span>
         ) : null}
@@ -592,13 +582,13 @@ export default function JobsPage() {
         ))}
         {activeFilterCount > 0 || query || urlCategory !== "" ? (
           <button
-            className="rounded-full px-2 py-1.5 text-[12px] font-semibold text-muted hover:text-brand hover:underline"
+            className="shrink-0 rounded-full px-2 py-1.5 text-[12px] font-semibold text-muted hover:text-brand hover:underline"
             onClick={clearFilters}
           >
             Clear all
           </button>
         ) : null}
-      </div>
+      </ChipRow>
       <p aria-live="polite" className="text-[13px] text-muted">
         {results.length} {results.length === 1 ? "job" : "jobs"} · {SORT_LABELS[filters.sort]}
       </p>

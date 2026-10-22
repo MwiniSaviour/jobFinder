@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Categories",
+  title: "Your profile — JobFinder",
 };
 
-export default function CategoriesLayout({ children }: { children: ReactNode }) {
+export default function ProfileLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return <>{children}</>;
 }

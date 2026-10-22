@@ -1,7 +1,7 @@
 import type { ComponentPropsWithoutRef } from "react";
 
 const CHIP_BASE =
-  "inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors whitespace-nowrap";
+  "inline-flex shrink-0 snap-start items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors whitespace-nowrap";
 
 export function chipClass(state: "active" | "idle"): string {
   if (state === "active") {

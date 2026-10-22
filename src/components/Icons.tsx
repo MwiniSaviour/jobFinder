@@ -199,17 +199,6 @@ export function StarIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function CategoriesGridIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <IconBase {...props}>
-      <rect width="7" height="7" x="3" y="3" rx="1" />
-      <rect width="7" height="7" x="14" y="3" rx="1" />
-      <rect width="7" height="7" x="14" y="14" rx="1" />
-      <rect width="7" height="7" x="3" y="14" rx="1" />
-    </IconBase>
-  );
-}
-
 export function XIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <IconBase {...props}>
@@ -321,6 +310,35 @@ export function PencilIcon(props: SVGProps<SVGSVGElement>) {
     <IconBase {...props}>
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" />
       <path d="m14.5 5.5 3 3" />
+    </IconBase>
+  );
+}
+
+export function MailIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <rect width="18" height="14" x="3" y="5" rx="2" />
+      <path d="m3.5 7 7.3 5.2a2 2 0 0 0 2.4 0L20.5 7" />
+    </IconBase>
+  );
+}
+
+export function CreditCardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <rect width="18" height="14" x="3" y="5" rx="2" />
+      <path d="M3 10h18" />
+      <path d="M7 15h3" />
+    </IconBase>
+  );
+}
+
+export function SignOutIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
     </IconBase>
   );
 }
