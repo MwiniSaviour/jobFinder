@@ -155,7 +155,7 @@ export function ApplicationsList() {
                 >
                   <CategoryTile category={job.category} />
                   <span className="min-w-0 flex-1">
-                    <span className="block w-fit rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand">
+                    <span className="block w-fit rounded-full bg-brand-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand">
                       {APPLICATION_STATUS_LABEL[record.status]}
                     </span>
                     <span className="mt-1.5 block truncate text-[15px] font-semibold">{job.title}</span>

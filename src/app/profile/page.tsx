@@ -36,9 +36,11 @@ import {
   saveQualification,
   setDefaultPaymentMethod,
   setNotifications,
+  setRegion,
   updateIdentity,
   type Qualification,
 } from "@/lib/profile";
+import GH_REGIONS from "@/lib/geo";
 
 type Draft = {
   name: string;
@@ -425,6 +427,32 @@ export default function ProfilePage() {
       )}
 
       <section className="hero-rise" style={sectionDelay(1)}>
+        <SectionHeader title="Region" />
+        <div className="rounded-[16px] border border-border bg-surface p-4 shadow-card">
+          <label className={labelClass}>
+            Home region
+            <select
+              className={inputClass}
+              value={profile.region ?? "Not set"}
+              onChange={(event) =>
+                setRegion(event.target.value === "Not set" ? null : event.target.value)
+              }
+            >
+              <option value="Not set">Not set</option>
+              {GH_REGIONS.map((region) => (
+                <option key={region.name} value={region.name}>
+                  {region.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-3 text-[13px] text-muted">
+            Used for local suggestions and popular places.
+          </p>
+        </div>
+      </section>
+
+      <section className="hero-rise" style={sectionDelay(2)}>
         <SectionHeader title="Skills" />
         <form onSubmit={submitSkill} className="flex gap-2">
           <input
@@ -467,7 +495,7 @@ export default function ProfilePage() {
         )}
       </section>
 
-      <section className="hero-rise" style={sectionDelay(2)}>
+      <section className="hero-rise" style={sectionDelay(3)}>
         <SectionHeader title="Qualifications" />
         <div className="space-y-3">
           {profile.qualifications.length > 0 ? (
@@ -593,7 +621,7 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <section className="hero-rise" style={sectionDelay(3)}>
+      <section className="hero-rise" style={sectionDelay(4)}>
         <SectionHeader title="Account" />
         <div className={cardListClass}>
           <div className={rowClass}>
@@ -651,7 +679,7 @@ export default function ProfilePage() {
         </p>
       </section>
 
-      <section className="hero-rise" style={sectionDelay(4)}>
+      <section className="hero-rise" style={sectionDelay(5)}>
         <SectionHeader title="Payment methods" />
         <div className="space-y-3">
           {profile.paymentMethods.length > 0 ? (
@@ -779,7 +807,7 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <section className="hero-rise" style={sectionDelay(5)}>
+      <section className="hero-rise" style={sectionDelay(6)}>
         <SectionHeader title="Your activity" />
         <div className={cardListClass}>
           <Link href="/activity" className={rowClass}>

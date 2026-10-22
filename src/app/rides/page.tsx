@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { RidesClient } from "../../components/RidesClient";
+import RidesClient from "../../components/RidesClient";
 
 export const metadata: Metadata = {
   title: "Rides",

@@ -7,7 +7,8 @@ export type RideBookingStatus =
   | "arrived"
   | "in_trip"
   | "completed"
-  | "cancelled";
+  | "cancelled"
+  | "canceled";
 
 export type RideDestinationChange = {
   place: string;
@@ -16,8 +17,8 @@ export type RideDestinationChange = {
 
 export type RideBooking = {
   id: string;
-  routeId: number;
-  optionId: string;
+  routeId?: number;
+  optionId?: string;
   pickup: string;
   dropoff: string;
   day: RideDay;
@@ -31,9 +32,19 @@ export type RideBooking = {
   fare: number;
   etaMinutes: number;
   note: string;
+  requestType: "ride" | "parcel";
+  weightTier: "small" | "medium" | "large" | null;
+  pickupCoord: { lat: number; lng: number };
+  dropoffCoord: { lat: number; lng: number };
+  distanceKm: number;
+  schedule: { mode: string; reservedFor: string | null };
+  pinCode: string;
+  pinAttempts: number;
+  verifiedAt: string | null;
+  failureReason: string | null;
   status: RideBookingStatus;
   createdAt: string;
-  reservedFor: string | null;
+  reservedFor?: string | null;
   assignedAt: string | null;
   arrivedAt: string | null;
   startedAt: string | null;
@@ -42,7 +53,7 @@ export type RideBooking = {
   cancelFee: number;
   waitFee: number;
   tipPercent: number;
-  rating: number;
+  rating: number | null;
   destinationChanges: RideDestinationChange[];
 };
 
@@ -84,6 +95,7 @@ export const RIDE_STATUS_LABEL: Record<RideBookingStatus, string> = {
   in_trip: "On the way",
   completed: "Completed",
   cancelled: "Cancelled",
+  canceled: "Cancelled",
 };
 
 export const SERVICE_STATUS_LABEL: Record<ServiceBookingStatus, string> = {
@@ -117,7 +129,8 @@ const isRideStatus = (value: unknown): value is RideBookingStatus =>
   value === "arrived" ||
   value === "in_trip" ||
   value === "completed" ||
-  value === "cancelled";
+  value === "cancelled" ||
+  value === "canceled";
 
 const isServiceStatus = (value: unknown): value is ServiceBookingStatus =>
   value === "pending" ||
@@ -139,12 +152,25 @@ function isDestinationChange(value: unknown): value is RideDestinationChange {
   return isString(item.place) && isString(item.at);
 }
 
+function isPlainCoord(value: unknown): value is { lat: number; lng: number } {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return isNumber(item.lat) && isNumber(item.lng);
+}
+
+function isRideSchedule(
+  value: unknown
+): value is { mode: string; reservedFor: string | null } {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return isString(item.mode);
+}
+
 function normalizeRideBooking(value: unknown): RideBooking | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (
     !isString(item.id) ||
-    !isNumber(item.routeId) ||
     !isString(item.pickup) ||
     !isString(item.dropoff) ||
     !isNumber(item.seats) ||
@@ -158,7 +184,7 @@ function normalizeRideBooking(value: unknown): RideBooking | null {
   }
   return {
     id: item.id,
-    routeId: item.routeId,
+    routeId: isNumber(item.routeId) ? item.routeId : undefined,
     optionId: isString(item.optionId) ? item.optionId : "",
     pickup: item.pickup,
     dropoff: item.dropoff,
@@ -173,6 +199,32 @@ function normalizeRideBooking(value: unknown): RideBooking | null {
     fare: item.fare,
     etaMinutes: isNumber(item.etaMinutes) ? item.etaMinutes : 0,
     note: isString(item.note) ? item.note : "",
+    requestType: item.requestType === "parcel" ? "parcel" : "ride",
+    weightTier:
+      item.weightTier === "small" ||
+      item.weightTier === "medium" ||
+      item.weightTier === "large"
+        ? item.weightTier
+        : null,
+    pickupCoord: isPlainCoord(item.pickupCoord) ? item.pickupCoord : { lat: 0, lng: 0 },
+    dropoffCoord: isPlainCoord(item.dropoffCoord)
+      ? item.dropoffCoord
+      : { lat: 0, lng: 0 },
+    distanceKm: isNumber(item.distanceKm) ? item.distanceKm : 0,
+    schedule: isRideSchedule(item.schedule)
+      ? {
+          mode: item.schedule.mode,
+          reservedFor: isNullableString(item.schedule.reservedFor)
+            ? item.schedule.reservedFor
+            : null,
+        }
+      : { mode: "now", reservedFor: null },
+    pinCode: isString(item.pinCode) ? item.pinCode : "",
+    pinAttempts: isNumber(item.pinAttempts) ? item.pinAttempts : 0,
+    verifiedAt: isNullableString(item.verifiedAt) ? item.verifiedAt : null,
+    failureReason: isNullableString(item.failureReason)
+      ? item.failureReason
+      : null,
     status: item.status,
     createdAt: item.createdAt,
     reservedFor: isNullableString(item.reservedFor) ? item.reservedFor : null,
@@ -184,7 +236,7 @@ function normalizeRideBooking(value: unknown): RideBooking | null {
     cancelFee: isNumber(item.cancelFee) ? item.cancelFee : 0,
     waitFee: isNumber(item.waitFee) ? item.waitFee : 0,
     tipPercent: isNumber(item.tipPercent) ? item.tipPercent : 0,
-    rating: isNumber(item.rating) ? item.rating : 0,
+    rating: isNumber(item.rating) ? item.rating : null,
     destinationChanges: Array.isArray(item.destinationChanges)
       ? item.destinationChanges.filter(isDestinationChange)
       : [],
@@ -252,11 +304,26 @@ function parseRecents(raw: string | null): string[] {
   }
 }
 
-export const rideBookings = createCollectionStore<RideBooking[]>(
-  "jf:bookings",
-  (raw) => parseArray<RideBooking>(raw, normalizeRideBooking),
-  "persistent",
-);
+function createRideBookingsStore() {
+  const store = createCollectionStore<RideBooking[]>(
+    "jf:bookings",
+    (raw) => parseArray<RideBooking>(raw, normalizeRideBooking),
+    "persistent",
+  );
+  const add = (booking: RideBooking): void => {
+    store.write([...store.read(), booking]);
+  };
+  const update = (id: string, patch: Partial<RideBooking>): void => {
+    store.write(
+      store.read().map((booking) =>
+        booking.id === id ? { ...booking, ...patch } : booking
+      )
+    );
+  };
+  return Object.assign(store, { add, update });
+}
+
+export const rideBookings = createRideBookingsStore();
 
 export const serviceBookings = createCollectionStore<ServiceBooking[]>(
   "jf:service-bookings",
@@ -264,9 +331,9 @@ export const serviceBookings = createCollectionStore<ServiceBooking[]>(
   "persistent",
 );
 
-export const rideRecents = createCollectionStore<string[]>(
+export const rideRecents = createCollectionStore<RideBooking[]>(
   "jf:rides-recents",
-  parseRecents,
+  (raw) => parseArray<RideBooking>(raw, normalizeRideBooking),
   "persistent",
 );
 
@@ -281,8 +348,50 @@ export function rideTotal(booking: RideBooking): number {
   return booking.fare + booking.waitFee + booking.cancelFee + tip;
 }
 
-export function rideTipAmount(booking: RideBooking): number {
-  return Math.round(booking.fare * (booking.tipPercent / 100));
+export function rideTipAmount(booking: RideBooking, percent?: number): number {
+  const pct = percent ?? booking.tipPercent;
+  return Math.round(booking.fare * (pct / 100));
+}
+
+export function generatePin(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+export type RideReceiptLine = { label: string; amount: number };
+
+export type RideReceipt = {
+  outcome: string;
+  issuedAt: string;
+  lines: RideReceiptLine[];
+  total: number;
+  note: string;
+};
+
+export function rideReceiptFor(booking: RideBooking): RideReceipt {
+  const lines: RideReceiptLine[] = [
+    { label: "Fare", amount: booking.fare },
+  ];
+  if (booking.cancelFee > 0) {
+    lines.push({ label: "Cancellation fee", amount: booking.cancelFee });
+  }
+  if (booking.waitFee > 0) {
+    lines.push({ label: "Waiting time", amount: booking.waitFee });
+  }
+  if (booking.tipPercent > 0) {
+    lines.push({
+      label: `Tip (${booking.tipPercent}%)`,
+      amount: rideTipAmount(booking),
+    });
+  }
+  const issuedAt =
+    booking.completedAt ?? booking.cancelledAt ?? booking.createdAt;
+  return {
+    outcome: RIDE_STATUS_LABEL[booking.status],
+    issuedAt,
+    lines,
+    total: rideTotal(booking),
+    note: booking.note,
+  };
 }
 
 export function isRideCancellable(booking: RideBooking, now: Date = new Date()): boolean {
@@ -307,7 +416,7 @@ export function rideCancelFee(booking: RideBooking, now: Date = new Date()): num
 
 export function rideWaitFee(
   booking: RideBooking,
-  completedAt: string | null,
+  completedAt: string | null = booking.completedAt,
   now: Date = new Date(),
 ): number {
   if (!booking.arrivedAt) return 0;

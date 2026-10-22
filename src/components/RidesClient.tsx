@@ -1,28 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { CSSProperties } from "react";
-import { Chip } from "./Chip";
-import { EmptyState } from "./EmptyState";
-import { NoteField } from "./NoteField";
-import { PromiseStrip } from "./PromiseStrip";
-import { SavedListRow } from "./SavedListRow";
-import { SearchBar } from "./SearchBar";
-import { SectionHeader } from "./SectionHeader";
 import {
-  CarIcon,
-  ChevronLeftIcon,
-  ClockIcon,
-  MapPinIcon,
-  MessageIcon,
-  PencilIcon,
-  PhoneIcon,
-  ShareIcon,
-  StarIcon,
-} from "./Icons";
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
+import dynamic from "next/dynamic";
+import { onProfileChange, profileStore } from "@/lib/profile";
+import {
+  RIDE_CLASSES,
+  formatRideDate,
+  reserveDateBounds,
+  rideDayForDate,
+} from "@/lib/rides";
+import type { RideClass } from "@/lib/rides";
 import {
   RIDE_CANCEL_WINDOW_MINUTES,
   RIDE_FREE_WAIT_MINUTES,
+  generatePin,
   isRideCancellable,
   rideBookings,
   rideCancelFee,
@@ -30,278 +28,735 @@ import {
   rideTipAmount,
   rideTotal,
   rideWaitFee,
-  type RideBooking,
-} from "../lib/bookings";
+} from "@/lib/bookings";
+import type { RideBooking } from "@/lib/bookings";
 import {
-  DAY_LABEL,
-  KNOWN_PLACES,
-  RIDE_CLASSES,
-  RIDE_DAYS,
-  RIDE_ROUTES,
-  alternativeClass,
-  classOptions,
-  findRoute,
-  formatRideDate,
-  isKnownPlace,
-  maxSeatsFor,
-  normalizePlace,
-  quoteOptions,
-  reserveDateBounds,
-  rideDayForDate,
-  vehicleFor,
-  type RideClass,
-  type RideDay,
-} from "../lib/rides";
+  GH_REGIONS,
+  etaMinutesFor,
+  fareBreakdown,
+  formatCedis,
+  getGpsPosition,
+  haversineKm,
+  mockDriver,
+  nearestRegion,
+  popularPlaces,
+  regionForName,
+  reverseGeocode,
+  searchPlaces,
+} from "@/lib/geo";
+import type { LatLng, PlaceResult, Region, WeightTier } from "@/lib/geo";
+import { Chip } from "./Chip";
+import { EmptyState } from "./EmptyState";
+import LocationSearch from "./LocationSearch";
+import { NoteField } from "./NoteField";
+import PinCodeSheet from "./PinCodeSheet";
+import { PromiseStrip } from "./PromiseStrip";
+import { SavedListRow } from "./SavedListRow";
+import { SectionHeader } from "./SectionHeader";
+import {
+  CalendarIcon,
+  CarIcon,
+  ChevronLeftIcon,
+  ClockIcon,
+  MapPinIcon,
+  MessageIcon,
+  PackageIcon,
+  PencilIcon,
+  PhoneIcon,
+  ShareIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  XIcon,
+} from "./Icons";
 
-type Step = "search" | "choose" | "status";
+const RideMap = dynamic(() => import("./RideMap"), {
+  ssr: false,
+  loading: () => <MapSkeleton />,
+});
 
-const PAGE_TITLE = "Book a ride";
-const PAGE_SUB =
-  "Scheduled rides with local drivers across the metro. Prices and open seats are posted with each route.";
+type BookingStep = "search" | "confirm" | "status";
+type ScheduleMode = "now" | "later";
+type SavedRow = {
+  key: string;
+  icon: "pin" | "clock";
+  primary: string;
+  secondary: string;
+  target: "pickup" | "dropoff";
+  place: PlaceResult | null;
+};
+
+const SAVED_PLACE_TITLE = "Saved places";
+const CHOOSE_PLACE_TITLE = "Choose destination";
+const PICKUP_PROMPT = "Where are you now?";
+const DROPOFF_PROMPT = "Where are you headed?";
 const PLACE_ERROR = "We couldn't find that place.";
-const SAME_PLACE_ERROR = "Choose a drop-off different from your pickup.";
-const FARE_NOTE = "Fare shown upfront — tolls and surcharges may apply.";
-const SEAT_OPTIONS = [1, 2, 3];
-const ROW_STAGGER_MS = 80;
-const ROW_STAGGER_MAX_MS = 400;
-const MATCHING_DELAY_MS = 1600;
-const ARRIVAL_DELAY_MS = 20000;
-const MATCHING_SUBTITLE = "Usually under a minute.";
-const DRIVER_ASSIGNED_SUBTITLE = "Arriving in";
-const ARRIVED_TITLE = "Your driver has arrived.";
-const ARRIVED_SUBTITLE = `Free wait time: ${RIDE_FREE_WAIT_MINUTES} min.`;
-const WAIT_OVER_SUBTITLE = "Free wait time is over. Waiting time is now charged per minute.";
-const IN_TRIP_TITLE = "On the way.";
-const FINAL_AMOUNT_NOTE = "Final amount set at drop-off.";
-const CANCEL_COPY = "Free cancellation until your driver accepts.";
-const CANCEL_COPY_ASSIGNED = `Free cancellation until ${RIDE_CANCEL_WINDOW_MINUTES} minutes after your driver accepts.`;
-const CANCEL_FEE_COPY = "Cancelling now charges a cancellation fee.";
-const CONTACT_COPY =
-  "Calling and messaging your driver are available once the live ride service is connected.";
-const SHARE_RIDE_COPY = "Ride link copied.";
-const TIP_TITLE = "Rate your trip";
-const TIP_SUBTITLE = "Tips stay editable for 30 days after the trip.";
-const RATING_REQUIRED_COPY = "Pick a rating to finish.";
-const TIP_CHIPS = [0, 10, 15, 20];
-const RATING_VALUES = [1, 2, 3, 4, 5];
-const RESERVE_LABEL = "Reserve a specific date";
-const RESERVE_HINT = "Up to 90 days ahead.";
-const PAST_RIDES_LABEL = "Past rides";
-const NO_PAST_RIDES = "No rides yet.";
-const NO_PAST_RIDES_ACTION = "Reserve a ride";
-const NO_ACTIVE_RIDE_TITLE = "No active ride";
-const NO_ACTIVE_RIDE_SUB = "Start a new ride and its status appears here.";
-const BOOK_ANOTHER_RIDE = "Book another ride";
-const BOOK_A_RIDE = "Book a ride";
-const START_RIDE = "Start ride";
-const END_RIDE = "End ride";
-const CANCEL_RIDE = "Cancel ride";
-const SUBMIT_RATING = "Submit";
-const CHANGE_DESTINATION = "Add or change destination";
 const DESTINATION_SAVED = "Destination updated. Fare re-quoted.";
 const SHARE_RIDE_TITLE = "Share ride";
-const CALL_DRIVER = "Call driver";
-const MESSAGE_DRIVER = "Message driver";
-const OPEN_STATUS_LABELS = ["matching", "assigned", "arrived", "in_trip"] as const;
+const SHARE_RIDE_COPY = "Where I'm headed, on JobFinder.";
+const GPS_NOTE = "Allow location access, or set pickup manually.";
+const GPS_ERROR = "We couldn't reach your location.";
+const GPS_PICKUP_LABEL = "Set pickup manually";
+const MATCH_DELAY_SECONDS = 6;
+const DRIVER_ARRIVES_AFTER_SECONDS = 25;
+const PIN_STRIKE_LIMIT = 3;
+const BASE_ETA_MINUTES = 5;
+const TIP_CHIPS = [0, 10, 15, 20];
+const RATING_VALUES = [1, 2, 3, 4, 5];
 
-let toastTimer: number | null = null;
+const TRIP_PROMISES = [
+  "Driver matched in under 2 minutes",
+  "Live tracking from pickup to dropoff",
+  "Fare shown before you confirm",
+];
 
-function rowDelay(index: number): CSSProperties {
-  return {
-    "--hero-delay": `${Math.min(index * ROW_STAGGER_MS, ROW_STAGGER_MAX_MS)}ms`,
-  } as CSSProperties;
+const DRIVER_FALLBACK = { name: "Kwame", vehicle: "Silver Honda Civic", plate: "GR 0000-24" };
+
+const CLASS_FALLBACK: RideClass[] = ["Economy", "Comfort", "SUV"];
+
+const FAILURE_COPY: Record<string, string> = {
+  pickup_code: "Ride cancelled. The pickup code was entered wrong three times.",
+  no_receiver: "Driver waited, but no one shared the pickup code in time.",
+  changed_mind: "Ride cancelled by you.",
+};
+
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+function rowStyle(index: number): CSSProperties {
+  return { "--hero-delay": `${Math.min(index * 80, 400)}ms` } as CSSProperties;
 }
 
-function seatsLabel(count: number): string {
-  return `${count} seat${count === 1 ? "" : "s"}`;
+function clockLabel(value: string): string {
+  const [hours, minutes] = value.split(":");
+  const hour = Number.parseInt(hours ?? "0", 10);
+  if (!Number.isFinite(hour)) return value;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const display = hour % 12 === 0 ? 12 : hour % 12;
+  return `${display}:${minutes ?? "00"} ${suffix}`;
 }
 
-function tripDateLabel(booking: RideBooking): string {
-  if (booking.reservedFor) return formatRideDate(booking.reservedFor);
-  if (booking.dayLabel) return booking.dayLabel;
-  return DAY_LABEL[booking.day];
+function isoAt(value: string | null): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function safeDistanceKm(from: LatLng, to: LatLng): number | null {
+  try {
+    const value = haversineKm(from, to);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function etaFor(distanceKm: number | null): number | null {
+  if (distanceKm === null) return null;
+  try {
+    const value = etaMinutesFor(distanceKm);
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function fareAmount(distanceKm: number | null, rideClass: RideClass, weightTier: WeightTier | null): number | null {
+  if (distanceKm === null) return null;
+  try {
+    const detail = fareBreakdown(distanceKm, rideClass, weightTier);
+    const total = detail && typeof detail.total === "number" ? detail.total : null;
+    return total !== null && Number.isFinite(total) && total > 0 ? total : null;
+  } catch {
+    return null;
+  }
+}
+
+function moneyLabel(value: number | null): string {
+  if (value === null) return "--";
+  try {
+    const text = formatCedis(value);
+    if (typeof text === "string" && text.trim().length > 0) return text;
+  } catch {
+    return `GH₵ ${value.toFixed(2)}`;
+  }
+  return `GH₵ ${value.toFixed(2)}`;
+}
+
+function regionForPlaceText(value: string | null | undefined): Region | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  try {
+    return regionForName(value) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function nearestRegionForText(value: string | null | undefined): Region | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  try {
+    return nearestRegion(value) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function driverFor(region: Region | null): { name: string; vehicle: string; plate: string } {
+  if (!region) return DRIVER_FALLBACK;
+  try {
+    const info = mockDriver(region.id);
+    if (info && typeof info.name === "string" && info.name.trim().length > 0) {
+      return {
+        name: info.name,
+        vehicle: typeof info.vehicle === "string" && info.vehicle ? info.vehicle : DRIVER_FALLBACK.vehicle,
+        plate: typeof info.plate === "string" && info.plate ? info.plate : DRIVER_FALLBACK.plate,
+      };
+    }
+  } catch {
+    return DRIVER_FALLBACK;
+  }
+  return DRIVER_FALLBACK;
+}
+
+function etaMinutesOf(booking: RideBooking): number {
+  const value = booking.etaMinutes;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : BASE_ETA_MINUTES;
 }
 
 function statusLabel(booking: RideBooking): string {
-  if (booking.status === "matching") return "Finding your driver…";
-  if (booking.status === "assigned") return `Arriving in ${booking.etaMinutes} min`;
-  if (booking.status === "arrived") return ARRIVED_TITLE;
-  if (booking.status === "in_trip") return `To ${booking.dropoff}`;
-  if (booking.status === "completed") return "Trip completed";
-  return "Cancelled";
+  switch (booking.status) {
+    case "matching":
+      return "Finding your driver…";
+    case "assigned":
+      return `Arriving soon · To ${booking.pickup}`;
+    case "arrived":
+      return "Driver is at your pickup point";
+    case "in_trip":
+      return `Heading to ${booking.dropoff}`;
+    case "completed":
+      return "Trip completed";
+    default:
+      return "Trip cancelled";
+  }
 }
 
-function tipLabel(percent: number): string {
-  if (percent === 0) return "None";
-  return `${percent}%`;
+function classList(): { id: RideClass; label: string }[] {
+  try {
+    const entries = RIDE_CLASSES;
+    if (Array.isArray(entries)) {
+      const mapped = entries
+        .map((entry) => {
+          const record = entry as { id?: unknown; label?: unknown };
+          if (typeof record.id === "string" && typeof record.label === "string") {
+            return { id: record.id as RideClass, label: record.label };
+          }
+          return null;
+        })
+        .filter((entry): entry is { id: RideClass; label: string } => entry !== null);
+      if (mapped.length > 0) return mapped;
+    }
+  } catch {
+    return CLASS_FALLBACK.map((id) => ({ id, label: id }));
+  }
+  return CLASS_FALLBACK.map((id) => ({ id, label: id }));
 }
 
-export function RidesClient() {
-  const bookings = useSyncExternalStore(
-    rideBookings.subscribe,
-    rideBookings.getSnapshot,
-    rideBookings.getServerSnapshot,
-  );
-  const recents = useSyncExternalStore(
-    rideRecents.subscribe,
-    rideRecents.getSnapshot,
-    rideRecents.getServerSnapshot,
-  );
+function parseLocationValue(value: unknown): PlaceResult | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<PlaceResult> & { name?: unknown; label?: unknown };
+  const addr =
+    typeof candidate.addr === "string" && candidate.addr.trim().length > 0
+      ? candidate.addr
+      : typeof candidate.name === "string" && candidate.name.length > 0
+        ? candidate.name
+        : typeof candidate.label === "string" && candidate.label.length > 0
+          ? candidate.label
+          : null;
+  const lat = typeof candidate.lat === "number" ? candidate.lat : null;
+  const lng = typeof candidate.lng === "number" ? candidate.lng : null;
+  if (addr === null || lat === null || lng === null) return null;
+  return {
+    addr,
+    lat,
+    lng,
+    regionId: typeof candidate.regionId === "string" ? candidate.regionId : null,
+  };
+}
 
-  const [step, setStep] = useState<Step>("search");
-  const [pickup, setPickup] = useState("Riverside");
-  const [dropoff, setDropoff] = useState("");
-  const [day, setDay] = useState<RideDay>("Weekday");
-  const [reservedDate, setReservedDate] = useState<string | null>(null);
-  const [seats, setSeats] = useState(1);
+function placeFromRegionCenter(placeName: string, region: Region): PlaceResult {
+  return { addr: placeName, lat: region.center.lat, lng: region.center.lng, regionId: region.id };
+}
+
+async function resolveSelection(value: unknown): Promise<PlaceResult | null> {
+  const direct = parseLocationValue(value);
+  if (direct) return direct;
+  if (typeof value !== "string") return null;
+  try {
+    const results = (await searchPlaces(value)) as unknown;
+    if (Array.isArray(results)) {
+      for (const candidate of results) {
+        const place = parseLocationValue(candidate);
+        if (place) return place;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function safePopular(region: Region): Promise<PlaceResult[]> {
+  try {
+    const entries = (await popularPlaces([region.id])) as unknown;
+    if (!Array.isArray(entries)) return [];
+    const places: PlaceResult[] = [];
+    for (const entry of entries.slice(0, 6)) {
+      const place = parseLocationValue(entry);
+      if (place) {
+        places.push({ ...place, regionId: place.regionId ?? region.id });
+      } else if (typeof entry === "string") {
+        places.push(placeFromRegionCenter(entry, region));
+      }
+    }
+    return places.slice(0, 4);
+  } catch {
+    return [];
+  }
+}
+
+function reserveBounds(): { min: string; max: string } | null {
+  try {
+    const bounds = reserveDateBounds();
+    if (
+      bounds &&
+      typeof bounds === "object" &&
+      typeof bounds.min === "string" &&
+      typeof bounds.max === "string"
+    ) {
+      return { min: bounds.min, max: bounds.max };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function MapSkeleton() {
+  return (
+    <div className="mt-5 h-72 overflow-hidden rounded-[16px] border border-border bg-surface">
+      <div className="h-full w-full animate-pulse bg-brand-soft" />
+    </div>
+  );
+}
+
+type ProfileSnapshot = {
+  city: string | null;
+  savedPlaces?: string[];
+};
+
+function readProfile(): ProfileSnapshot {
+  return profileStore.getSnapshot() as unknown as ProfileSnapshot;
+}
+
+function getServerProfile(): ProfileSnapshot {
+  return profileStore.getServerSnapshot() as unknown as ProfileSnapshot;
+}
+
+const EMPTY_BOOKINGS: RideBooking[] = [];
+const EMPTY_RECENTS: string[] = [];
+
+const recentsMemo = new WeakMap<unknown[], string[]>();
+
+function deriveRecents(snapshot: unknown): string[] {
+  if (!Array.isArray(snapshot)) {
+    return EMPTY_RECENTS;
+  }
+  const cached = recentsMemo.get(snapshot);
+  if (cached) {
+    return cached;
+  }
+  const derived = snapshot
+    .map((entry) => (entry && typeof entry === "object" ? (entry as { id?: unknown }).id : entry))
+    .filter((id): id is string => typeof id === "string");
+  recentsMemo.set(snapshot, derived);
+  return derived;
+}
+
+function readBookings(): RideBooking[] {
+  const snapshot = rideBookings.getSnapshot();
+  return Array.isArray(snapshot) ? snapshot : EMPTY_BOOKINGS;
+}
+
+function getServerBookings(): RideBooking[] {
+  const snapshot = rideBookings.getServerSnapshot();
+  return Array.isArray(snapshot) ? snapshot : EMPTY_BOOKINGS;
+}
+
+function readRecents(): string[] {
+  return deriveRecents(rideRecents.getSnapshot() as unknown);
+}
+
+function getServerRecents(): string[] {
+  return deriveRecents(rideRecents.getServerSnapshot() as unknown);
+}
+
+function safeCancellable(booking: RideBooking): boolean {
+  try {
+    return Boolean(isRideCancellable(booking));
+  } catch {
+    return false;
+  }
+}
+
+function safeCancelFee(booking: RideBooking): number {
+  try {
+    const value = rideCancelFee(booking);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function safeWaitFee(booking: RideBooking): number {
+  try {
+    const value = rideWaitFee(booking);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function safeTipAmount(booking: RideBooking, percent: number): number {
+  try {
+    const value = rideTipAmount(booking, percent);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function safeTotal(booking: RideBooking): number | null {
+  try {
+    const value = rideTotal(booking);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberRide(booking: RideBooking): void {
+  try {
+    const store = rideRecents as {
+      add?: (entry: RideBooking) => unknown;
+      write?: (entries: RideBooking[]) => unknown;
+    };
+    if (typeof store.add === "function") {
+      store.add(booking);
+      return;
+    }
+    if (typeof store.write === "function") {
+      store.write([booking]);
+    }
+  } catch {
+    return;
+  }
+}
+
+export default function RidesClient() {
+  const profile = useSyncExternalStore(onProfileChange, readProfile, getServerProfile);
+  const bookings = useSyncExternalStore(rideBookings.subscribe, readBookings, getServerBookings);
+  const recents = useSyncExternalStore(rideRecents.subscribe, readRecents, getServerRecents);
+
+  const [step, setStep] = useState<BookingStep>("search");
+  const [regionId, setRegionId] = useState<string | null>(null);
+  const [pickupPlace, setPickupPlace] = useState<PlaceResult | null>(null);
+  const [dropoffPlace, setDropoffPlace] = useState<PlaceResult | null>(null);
+  const [saveTarget, setSaveTarget] = useState<"pickup" | "dropoff" | null>(null);
+  const [popular, setPopular] = useState<PlaceResult[]>([]);
+  const [gpsState, setGpsState] = useState<"unknown" | "granted" | "denied">("unknown");
+  const [gpsError, setGpsError] = useState<string | null>(null);
   const [rideClass, setRideClass] = useState<RideClass>("Economy");
+  const [parcelMode, setParcelMode] = useState(false);
+  const [weightTier, setWeightTier] = useState<WeightTier | null>(null);
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
+  const [laterTime, setLaterTime] = useState("18:00");
+  const [laterDate, setLaterDate] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
-  const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [destinationOpen, setDestinationOpen] = useState(false);
-  const [tipPercent, setTipPercent] = useState<number | null>(null);
-  const [rating, setRating] = useState<number | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [pinDismissedKey, setPinDismissedKey] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [tipPercent, setTipPercent] = useState(0);
+  const [rating, setRating] = useState(0);
+  const [tick, setTick] = useState(0);
+  const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
+  const [regionOpen, setRegionOpen] = useState(false);
 
-  const showToast = useCallback((message: string) => {
-    if (toastTimer !== null) {
-      window.clearTimeout(toastTimer);
-    }
-    setToast(message);
-    toastTimer = window.setTimeout(() => setToast(null), 2200);
-  }, []);
+  const activeRegion = useMemo(() => {
+    const fromState = regionForPlaceText(regionId);
+    if (fromState) return fromState;
+    const fromProfile = regionForPlaceText(profile?.city);
+    if (fromProfile) return fromProfile;
+    const nearest = nearestRegionForText(profile?.city);
+    if (nearest) return nearest;
+    return GH_REGIONS[0] ?? null;
+  }, [regionId, profile?.city]);
 
-  const bounds = useMemo(() => reserveDateBounds(), []);
+  const regionList = useMemo(() => (Array.isArray(GH_REGIONS) ? GH_REGIONS : []), []);
 
-  const activeBooking = useMemo(() => {
-    if (activeBookingId) {
-      const found = bookings.find((booking) => booking.id === activeBookingId);
-      if (found) return found;
-    }
-    const open = bookings.filter((booking) =>
-      (OPEN_STATUS_LABELS as readonly string[]).includes(booking.status),
-    );
-    return open.length > 0 ? open[open.length - 1] : null;
-  }, [activeBookingId, bookings]);
-
-  const pastBookings = useMemo(
-    () =>
-      bookings
-        .filter((booking) => booking.status === "completed" || booking.status === "cancelled")
-        .slice()
-        .reverse(),
-    [bookings],
-  );
-
-  const effectiveDay: RideDay = useMemo(() => {
-    if (!reservedDate) return day;
-    const parsed = new Date(`${reservedDate}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) return day;
-    return rideDayForDate(parsed);
-  }, [day, reservedDate]);
-
-  const route = useMemo(
-    () => findRoute(pickup, dropoff, effectiveDay),
-    [dropoff, effectiveDay, pickup],
-  );
-  const quotes = useMemo(
-    () => (route ? quoteOptions(route, rideClass, seats) : []),
-    [rideClass, route, seats],
-  );
-  const driverCount = route ? classOptions(route, rideClass).length : 0;
-  const maxSeats = route ? maxSeatsFor(route, rideClass) : 0;
-  const alternate = route ? alternativeClass(route, rideClass) : null;
-
-  const advanceBookings = useCallback(() => {
-    const stamp = Date.now();
-    let changed = false;
-    const next = bookings.map((booking) => {
-      if (
-        booking.status === "matching" &&
-        stamp - new Date(booking.createdAt).getTime() >= MATCHING_DELAY_MS
-      ) {
-        changed = true;
-        return { ...booking, status: "assigned" as const, assignedAt: new Date(stamp).toISOString() };
-      }
-      if (
-        booking.status === "assigned" &&
-        booking.assignedAt &&
-        stamp - new Date(booking.assignedAt).getTime() >= ARRIVAL_DELAY_MS
-      ) {
-        changed = true;
-        return { ...booking, status: "arrived" as const, arrivedAt: new Date(stamp).toISOString() };
-      }
-      return booking;
-    });
-    if (changed) rideBookings.write(next);
-  }, [bookings]);
+  const dateBounds = useMemo(() => reserveBounds(), []);
 
   useEffect(() => {
-    advanceBookings();
-    const timer = window.setInterval(() => {
-      advanceBookings();
-      setNow(Date.now());
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [advanceBookings]);
+    if (!activeRegion) return;
+    if (profile?.city !== activeRegion.name && activeRegion.name) {
+      const snapshot = profileStore.getSnapshot();
+      profileStore.write({ ...snapshot, city: activeRegion.name, region: activeRegion.id });
+    }
+  }, [activeRegion, profile?.city]);
 
-  const handleFindRides = useCallback(() => {
-    if (!isKnownPlace(pickup) || !isKnownPlace(dropoff)) {
-      setFormError(PLACE_ERROR);
+  useEffect(() => {
+    if (!activeRegion) return;
+    let cancelled = false;
+    safePopular(activeRegion).then((places) => {
+      if (!cancelled) setPopular(places);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRegion]);
+
+  const showToast = useCallback((message: string) => {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => setToast(null), 2600);
+    setToast(message);
+  }, []);
+
+  const savedRows = useMemo<SavedRow[]>(() => {
+    const rows: SavedRow[] = [];
+    const savedNames = Array.isArray(profile?.savedPlaces) ? profile!.savedPlaces! : [];
+    for (const name of savedNames.slice(0, 3)) {
+      if (typeof name !== "string" || name.trim().length === 0) continue;
+      const region = regionForPlaceText(name) ?? activeRegion;
+      rows.push({
+        key: `saved-${name}`,
+        icon: "pin",
+        primary: name,
+        secondary: region ? `${region.capital} · ${region.name}` : "",
+        target: "pickup",
+        place: region ? placeFromRegionCenter(name, region) : null,
+      });
+    }
+    if (rows.length < 3 && activeRegion) {
+      for (const place of popular.slice(0, 3 - rows.length)) {
+        if (savedNames.some((name) => typeof name === "string" && name.trim() === place.addr)) continue;
+        rows.push({
+          key: `popular-${place.addr}`,
+          icon: "pin",
+          primary: place.addr,
+          secondary: `${activeRegion.capital} · ${activeRegion.name}`,
+          target: "dropoff",
+          place,
+        });
+      }
+    }
+    return rows;
+  }, [profile, popular, activeRegion]);
+
+  const recentRows = useMemo<SavedRow[]>(() => {
+    const rows: SavedRow[] = [];
+    for (const id of recents.slice(0, 3)) {
+      const found = bookings.find((entry) => entry.id === id);
+      if (!found) continue;
+      rows.push({
+        key: `recent-${found.id}`,
+        icon: "clock",
+        primary: found.dropoff,
+        secondary: `${found.dayLabel} · ${found.time}`,
+        target: "dropoff",
+        place: {
+          addr: found.dropoff,
+          lat: found.dropoffCoord.lat,
+          lng: found.dropoffCoord.lng,
+          regionId: null,
+        },
+      });
+    }
+    return rows;
+  }, [recents, bookings]);
+
+  const activeBooking = useMemo(() => {
+    if (activeBookingId === null) return null;
+    return bookings.find((entry) => entry.id === activeBookingId) ?? null;
+  }, [bookings, activeBookingId]);
+
+  const pinOpen =
+    activeBooking !== null &&
+    (activeBooking.status === "assigned" || activeBooking.status === "arrived") &&
+    pinDismissedKey !== `${activeBooking.id}|${activeBooking.status}`;
+
+  const dismissPin = useCallback(() => {
+    const found = activeBooking;
+    if (!found) return;
+    setPinDismissedKey(`${found.id}|${found.status}`);
+  }, [activeBooking]);
+
+  const pickup = pickupPlace;
+  const dropoff = dropoffPlace;
+
+  const distanceKm = useMemo(() => {
+    if (!pickup || !dropoff) return null;
+    return safeDistanceKm(
+      { lat: pickup.lat, lng: pickup.lng },
+      { lat: dropoff.lat, lng: dropoff.lng },
+    );
+  }, [pickup, dropoff]);
+
+  const etaMinutes = etaFor(distanceKm);
+  const requestClass = rideClass;
+  const fareEstimate = fareAmount(distanceKm, requestClass, parcelMode ? weightTier : null);
+
+  const advanceRide = useCallback((found: RideBooking | undefined) => {
+    if (!found) return;
+    const now = Date.now();
+    if (
+      found.status === "matching" &&
+      now - isoAt(found.createdAt) > MATCH_DELAY_SECONDS * 1000 &&
+      !found.failureReason
+    ) {
+      const driver = driverFor(nearestRegionForText(found.pickup) ?? regionForPlaceText(found.pickup));
+      rideBookings.update(found.id, {
+        status: "assigned",
+        driver: driver.name,
+        vehicle: driver.vehicle,
+        plate: driver.plate,
+        assignedAt: new Date(now).toISOString(),
+      });
       return;
     }
-    if (normalizePlace(pickup) === normalizePlace(dropoff)) {
-      setFormError(SAME_PLACE_ERROR);
+    if (
+      found.status === "assigned" &&
+      now - isoAt(found.assignedAt) > DRIVER_ARRIVES_AFTER_SECONDS * 1000
+    ) {
+      rideBookings.update(found.id, {
+        status: "arrived",
+        arrivedAt: new Date(now).toISOString(),
+      });
       return;
     }
-    setFormError(null);
-    setSelectedOptionId(null);
-    setStep("choose");
-  }, [dropoff, pickup]);
+    if (found.status === "in_trip" && found.startedAt) {
+      const tripMs = etaMinutesOf(found) * 60 * 1000;
+      if (now - isoAt(found.startedAt) >= tripMs) {
+        rideBookings.update(found.id, {
+          status: "completed",
+          completedAt: new Date(now).toISOString(),
+        });
+      }
+    }
+  }, []);
 
-  const handleRoutePick = useCallback(
-    (routeId: number) => {
-      const picked = RIDE_ROUTES.find((item) => item.id === routeId);
-      if (!picked) return;
-      setPickup(picked.from);
-      setDropoff(picked.to);
-      setDay(picked.day);
-      setReservedDate(null);
-      setFormError(null);
-      setSelectedOptionId(null);
-      setStep("choose");
+  useEffect(() => {
+    if (!activeBookingId) return;
+    const timer = setInterval(() => setTick((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [activeBookingId]);
+
+  useEffect(() => {
+    const found = activeBooking;
+    advanceRide(found ?? undefined);
+  }, [tick, activeBooking, advanceRide]);
+
+  const commitPlace = useCallback(
+    async (value: unknown, target: "pickup" | "dropoff") => {
+      let place = await resolveSelection(value);
+      if (!place && typeof value === "string" && activeRegion) {
+        place = placeFromRegionCenter(value.trim(), activeRegion);
+      }
+      if (!place) {
+        showToast(PLACE_ERROR);
+        setSaveTarget(null);
+        setDestinationOpen(false);
+        return;
+      }
+      const region = regionForPlaceText(place.regionId) ?? activeRegion;
+      const stamped: PlaceResult = region ? { ...place, regionId: region.id } : place;
+      if (target === "pickup") setPickupPlace(stamped);
+      else setDropoffPlace(stamped);
+      setSaveTarget(null);
     },
-    [],
+    [activeRegion, showToast],
   );
 
-  const confirmBooking = useCallback(() => {
-    if (!route) return;
-    const quote = quotes.find((item) => item.option.id === selectedOptionId);
-    if (!quote) return;
-    const vehicle = vehicleFor(rideClass);
+  const changeDestination = useCallback(
+    async (value: unknown) => {
+      const found = activeBooking;
+      if (!found) return;
+      const place = await resolveSelection(value);
+      if (!place) {
+        showToast(PLACE_ERROR);
+        setDestinationOpen(false);
+        return;
+      }
+      const nextKm = safeDistanceKm(found.pickupCoord, { lat: place.lat, lng: place.lng });
+      const eta = etaFor(nextKm);
+      const fare = fareAmount(nextKm, found.class, found.weightTier);
+      const patch: Partial<RideBooking> = {
+        dropoff: place.addr,
+        dropoffCoord: { lat: place.lat, lng: place.lng },
+        destinationChanges: [
+          ...found.destinationChanges,
+          { place: place.addr, at: new Date().toISOString() },
+        ],
+      };
+      if (nextKm !== null) patch.distanceKm = nextKm;
+      if (eta !== null) patch.etaMinutes = eta;
+      if (fare !== null) patch.fare = fare;
+      rideBookings.update(found.id, patch);
+      setDropoffPlace(place);
+      setDestinationOpen(false);
+      showToast(DESTINATION_SAVED);
+    },
+    [activeBooking, showToast],
+  );
+
+  const beginRide = useCallback(() => {
+    if (!pickup || !dropoff) {
+      showToast(PLACE_ERROR);
+      return;
+    }
+    if (parcelMode && weightTier === null) {
+      showToast("Choose a parcel size first.");
+      return;
+    }
+    const now = new Date();
+    const hour = Number.parseInt(laterTime.split(":")[0] ?? "18", 10);
+    const minute = Number.parseInt(laterTime.split(":")[1] ?? "0", 10);
+    const safeHour = Number.isFinite(hour) ? hour : 18;
+    const safeMinute = Number.isFinite(minute) ? minute : 0;
+    const reservedFor =
+      scheduleMode === "later"
+        ? (laterDate && /^\d{4}-\d{2}-\d{2}$/.test(laterDate)
+            ? new Date(`${laterDate}T${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}:00`)
+            : new Date(now.getFullYear(), now.getMonth(), now.getDate(), safeHour, safeMinute)
+          ).toISOString()
+        : null;
+    if (fareEstimate === null) {
+      showToast("We couldn't price this trip yet. Try again.");
+      return;
+    }
     const booking: RideBooking = {
       id: `rb_${Date.now()}`,
-      routeId: route.id,
-      optionId: quote.option.id,
-      pickup: pickup.trim(),
-      dropoff: dropoff.trim(),
-      day: effectiveDay,
-      dayLabel: reservedDate ? formatRideDate(reservedDate) : route.dayLabel,
-      time: route.time,
-      seats,
-      class: rideClass,
-      driver: quote.option.driver,
-      vehicle: vehicle.name,
-      plate: vehicle.plate,
-      fare: quote.fare,
-      etaMinutes: quote.option.etaMinutes,
-      note: note.trim(),
+      requestType: parcelMode ? "parcel" : "ride",
+      weightTier,
+      pickup: pickup.addr,
+      dropoff: dropoff.addr,
+      pickupCoord: { lat: pickup.lat, lng: pickup.lng },
+      dropoffCoord: { lat: dropoff.lat, lng: dropoff.lng },
+      distanceKm: distanceKm ?? 0,
+      day: rideDayForDate(now),
+      dayLabel: scheduleMode === "later" && reservedFor ? formatRideDate(new Date(reservedFor)) : formatRideDate(now),
+      time: scheduleMode === "later" ? clockLabel(laterTime) : now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      etaMinutes: etaMinutes ?? BASE_ETA_MINUTES,
+      fare: fareEstimate,
+      note,
       status: "matching",
-      createdAt: new Date().toISOString(),
-      reservedFor: reservedDate,
+      createdAt: new Date(now).toISOString(),
       assignedAt: null,
       arrivedAt: null,
       startedAt: null,
@@ -310,891 +765,718 @@ export function RidesClient() {
       cancelFee: 0,
       waitFee: 0,
       tipPercent: 0,
-      rating: 0,
+      rating: null,
+      driver: "",
+      vehicle: "",
+      plate: "",
+      class: rideClass,
+      schedule: { mode: scheduleMode, reservedFor },
       destinationChanges: [],
+      pinCode: generatePin(),
+      pinAttempts: 0,
+      verifiedAt: null,
+      failureReason: null,
+      seats: 1,
     };
-    rideBookings.write([...bookings, booking]);
-    const destination = dropoff.trim();
-    rideRecents.write(
-      [destination, ...recents.filter((item) => item !== destination)].slice(0, 20),
-    );
+    rideBookings.add(booking);
     setActiveBookingId(booking.id);
-    setSelectedOptionId(null);
-    setNote("");
-    setTipPercent(null);
-    setRating(null);
     setStep("status");
-  }, [
-    bookings,
-    dropoff,
-    effectiveDay,
-    note,
-    pickup,
-    quotes,
-    recents,
-    reservedDate,
-    rideClass,
-    route,
-    seats,
-    selectedOptionId,
-  ]);
+  }, [pickup, dropoff, distanceKm, rideClass, parcelMode, weightTier, scheduleMode, laterTime, laterDate, note, etaMinutes, fareEstimate, showToast]);
 
-  const updateBooking = useCallback(
-    (id: string, patch: Partial<RideBooking>) => {
-      rideBookings.write(
-        bookings.map((booking) => (booking.id === id ? { ...booking, ...patch } : booking)),
-      );
-    },
-    [bookings],
-  );
+  const cancelRide = useCallback(() => {
+    const found = activeBooking;
+    if (!found) return;
+    if (!safeCancellable(found)) {
+      showToast("This ride can no longer be cancelled in the app.");
+      return;
+    }
+    const fee = safeCancelFee(found);
+    rideBookings.update(found.id, {
+      status: "canceled",
+      cancelledAt: new Date().toISOString(),
+      cancelFee: fee,
+      failureReason: "changed_mind",
+    });
+    setActiveBookingId(null);
+    setStep("search");
+    if (fee === 0) showToast("No cancellation charge.");
+    else showToast(`Cancellation fee: ${moneyLabel(fee)}`);
+  }, [activeBooking, showToast]);
 
-  const cancelBooking = useCallback(
-    (booking: RideBooking) => {
-      const fee = rideCancelFee(booking, new Date(now));
-      updateBooking(booking.id, {
-        status: "cancelled",
-        cancelledAt: new Date(now).toISOString(),
-        cancelFee: fee,
+  const verifyPin = useCallback(() => {
+    const found = activeBooking;
+    if (!found || found.verifiedAt || found.status !== "arrived") return;
+    rideBookings.update(found.id, {
+      status: "in_trip",
+      startedAt: new Date().toISOString(),
+      verifiedAt: new Date().toISOString(),
+    });
+    showToast("Code confirmed. Off to your destination.");
+  }, [activeBooking, showToast]);
+
+  const completeTrip = useCallback(() => {
+    const found = activeBooking;
+    if (!found) return;
+    rideBookings.update(found.id, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+    });
+  }, [activeBooking]);
+
+  const pinWrongAttempt = useCallback(() => {
+    const found = activeBooking;
+    if (!found) return;
+    const attempts = found.pinAttempts + 1;
+    if (attempts >= PIN_STRIKE_LIMIT) {
+      rideBookings.update(found.id, {
+        status: "canceled",
+        cancelledAt: new Date().toISOString(),
+        cancelFee: 0,
+        waitFee: 0,
+        tipPercent: 0,
+        pinAttempts: attempts,
+        failureReason: "pickup_code",
       });
-      showToast(fee > 0 ? "Ride cancelled with a fee." : "Ride cancelled.");
-    },
-    [now, showToast, updateBooking],
-  );
+      setActiveBookingId(null);
+      setStep("search");
+      showToast("Too many wrong codes. Ride cancelled.");
+      return;
+    }
+    rideBookings.update(found.id, { pinAttempts: attempts });
+  }, [activeBooking, showToast]);
 
-  const startTrip = useCallback(
-    (booking: RideBooking) => {
-      updateBooking(booking.id, {
-        status: "in_trip",
-        startedAt: new Date(now).toISOString(),
-      });
-    },
-    [now, updateBooking],
-  );
+  const pinFailHandoff = useCallback(() => {
+    const found = activeBooking;
+    if (!found) return;
+    rideBookings.update(found.id, {
+      status: "canceled",
+      cancelledAt: new Date().toISOString(),
+      cancelFee: 0,
+      waitFee: safeWaitFee(found),
+      tipPercent: 0,
+      failureReason: "no_receiver",
+    });
+    showToast("Driver waited, but no one shared the code. Ride cancelled.");
+  }, [activeBooking, showToast]);
 
-  const endTrip = useCallback(
-    (booking: RideBooking) => {
-      const completedAt = new Date(now).toISOString();
-      updateBooking(booking.id, {
-        status: "completed",
-        completedAt,
-        waitFee: rideWaitFee(booking, completedAt, new Date(now)),
-      });
-      setTipPercent(null);
-      setRating(null);
-    },
-    [now, updateBooking],
-  );
+  const submitRating = useCallback(() => {
+    const found = activeBooking;
+    if (!found || found.rating !== null) return;
+    if (rating <= 0) {
+      showToast("Pick a star rating to finish.");
+      return;
+    }
+    const waitFee = safeWaitFee(found);
+    const updated: RideBooking = {
+      ...found,
+      rating,
+      tipPercent,
+      waitFee,
+      cancelFee: 0,
+    };
+    rideBookings.update(found.id, {
+      rating,
+      tipPercent,
+      waitFee,
+      cancelFee: 0,
+    });
+    const tip = safeTipAmount(updated, tipPercent);
+    const totalDue = safeTotal({ ...updated, tipPercent: tip > 0 ? tipPercent : 0 });
+    rememberRide(updated);
+    setActiveBookingId(null);
+    setStep("search");
+    setTipPercent(0);
+    setRating(0);
+    setNote("");
+    showToast(`Thanks for riding. Total ${moneyLabel(totalDue)}.`);
+  }, [activeBooking, rating, tipPercent, showToast]);
 
-  const submitRating = useCallback(
-    (booking: RideBooking) => {
-      if (rating === null) {
-        setNotice(RATING_REQUIRED_COPY);
+  const shareRide = useCallback(async () => {
+    const found = activeBooking;
+    if (!found) return;
+    const summary = `${SHARE_RIDE_COPY}\npickup: ${found.pickup}\ndropoff: ${found.dropoff}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: SHARE_RIDE_TITLE, text: summary });
         return;
       }
-      updateBooking(booking.id, {
-        rating,
-        tipPercent: tipPercent ?? 0,
-      });
-      setNotice(null);
-      showToast("Thanks for riding.");
-    },
-    [rating, showToast, tipPercent, updateBooking],
-  );
-
-  const shareRide = useCallback(
-    (booking: RideBooking) => {
-      const summary = `Ride on JobFinder: ${booking.pickup} to ${booking.dropoff}, ${tripDateLabel(booking)} at ${booking.time}, ${booking.class} with ${booking.driver}.`;
-      if (typeof navigator.share === "function") {
-        void navigator.share({ title: SHARE_RIDE_TITLE, text: summary }).catch(() => {});
+    } catch {
+      try {
+        await navigator.clipboard.writeText(summary);
+        showToast("Ride summary copied.");
+        return;
+      } catch {
         return;
       }
-      navigator.clipboard
-        .writeText(summary)
-        .then(() => showToast(SHARE_RIDE_COPY))
-        .catch((error) => {
-          console.warn("JobFinder: unable to copy ride summary", error);
-        });
-    },
-    [showToast],
-  );
+    }
+    try {
+      await navigator.clipboard.writeText(summary);
+      showToast("Ride summary copied.");
+    } catch {
+      return;
+    }
+  }, [activeBooking, showToast]);
 
-  const changeDestination = useCallback(
-    (booking: RideBooking, place: string) => {
-      if (!isKnownPlace(place)) {
-        setFormError(PLACE_ERROR);
-        return;
-      }
-      const nextRoute = findRoute(booking.pickup, place, booking.day);
-      const nextQuotes = nextRoute ? quoteOptions(nextRoute, booking.class, booking.seats) : [];
-      if (!nextRoute || nextQuotes.length === 0) {
-        setFormError(PLACE_ERROR);
-        return;
-      }
-      setFormError(null);
-      setDestinationOpen(false);
-      updateBooking(booking.id, {
-        dropoff: place.trim(),
-        fare: nextQuotes[0].fare,
-        etaMinutes: nextQuotes[0].option.etaMinutes,
-        driver: nextQuotes[0].option.driver,
-        destinationChanges: [
-          ...booking.destinationChanges,
-          { place: place.trim(), at: new Date(now).toISOString() },
-        ],
-      });
-      setNotice(DESTINATION_SAVED);
-    },
-    [now, updateBooking],
-  );
+  const retryBooking = useCallback(() => {
+    const found = activeBooking ?? null;
+    if (!found) return;
+    setPickupPlace({
+      addr: found.pickup,
+      lat: found.pickupCoord.lat,
+      lng: found.pickupCoord.lng,
+      regionId: regionForPlaceText(found.pickup)?.id ?? activeRegion?.id ?? null,
+    });
+    setDropoffPlace({
+      addr: found.dropoff,
+      lat: found.dropoffCoord.lat,
+      lng: found.dropoffCoord.lng,
+      regionId: regionForPlaceText(found.dropoff)?.id ?? activeRegion?.id ?? null,
+    });
+    setRideClass(found.class);
+    setParcelMode(found.requestType === "parcel");
+    setWeightTier(found.weightTier);
+    setNote(found.note);
+    setActiveBookingId(null);
+    setStep("confirm");
+  }, [activeBooking, activeRegion]);
 
-  const renderSearch = () => (
-    <>
-      <div className="hero-rise">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-          {PAGE_TITLE}
-        </h1>
-        <p className="mt-2 text-[15px] text-muted">{PAGE_SUB}</p>
-      </div>
+  const laterLabel = useMemo(() => {
+    if (scheduleMode === "now") return "Now";
+    const hour = Number.parseInt(laterTime.split(":")[0] ?? "18", 10);
+    if (!Number.isFinite(hour)) return "Later";
+    return laterDate ? `${laterDate} ${clockLabel(laterTime)}` : `Today ${clockLabel(laterTime)}`;
+  }, [scheduleMode, laterTime, laterDate]);
 
-      {activeBooking ? (
+  const rowsForSearch = [...savedRows, ...recentRows];
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-lg flex-col">
+      <header className="flex items-center justify-between px-5 pt-6">
+        <a
+          href="/profile"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-soft text-brand"
+          aria-label="Back to profile"
+        >
+          <ChevronLeftIcon className="h-5 w-5" />
+        </a>
+        <div className="text-center">
+          <p className="text-sm font-semibold text-muted">{activeRegion ? activeRegion.name : "JobFinder"}</p>
+          <h1 className="text-lg font-bold text-ink">Rides &amp; trips</h1>
+        </div>
         <button
           type="button"
-          onClick={() => {
-            setActiveBookingId(activeBooking.id);
-            setStep("status");
-          }}
-          className="mt-5 flex w-full items-center gap-3.5 rounded-[16px] border border-brand bg-surface p-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-hover"
+          onClick={() => setRegionOpen((value) => !value)}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-soft text-brand"
+          aria-label="Change region"
         >
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-[14px] bg-brand-soft text-brand">
-            <CarIcon className="size-6" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[15px] font-semibold">
-              {`${activeBooking.pickup} → ${activeBooking.dropoff}`}
-            </span>
-            <span className="mt-0.5 block truncate text-[13px] text-muted">
-              {statusLabel(activeBooking)}
-            </span>
-          </span>
-          <span className="shrink-0 rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand">
-            {seatsLabel(activeBooking.seats)}
-          </span>
+          <PencilIcon className="h-4 w-4" />
         </button>
-      ) : null}
+      </header>
 
-      <div className="mt-6 space-y-5">
-        <SearchBar
-          key={dropoff}
-          onSearch={(value) => {
-            setDropoff(value);
-            setFormError(null);
-          }}
-          initialValue={dropoff}
-          placeholder="Where to?"
-          ariaLabel="Where to?"
-        />
-
-        <label className="block">
-          <span className="text-[13px] font-semibold text-foreground">Pickup</span>
-          <input
-            type="text"
-            value={pickup}
-            aria-label="Pickup location"
-            placeholder="Pickup location"
-            onChange={(event) => {
-              setPickup(event.target.value);
-              setFormError(null);
-            }}
-            className="mt-1.5 h-12 w-full rounded-[18px] border border-border bg-surface px-4 text-[15px] outline-none transition-colors placeholder:text-muted focus:border-brand"
-          />
-        </label>
-
-        <div>
-          <span className="text-[13px] font-semibold text-foreground">When</span>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {RIDE_DAYS.map((option) => (
+      {regionOpen && (
+        <section className="mx-5 mt-4 rounded-[16px] border border-border bg-surface p-4">
+          <SectionHeader title="Region" />
+          <p className="mt-1 text-xs text-muted">Choose your region for better suggestions.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {regionList.slice(0, 8).map((region) => (
               <Chip
-                key={option}
-                active={reservedDate === null && option === day}
+                key={region.id}
+                active={activeRegion?.id === region.id}
                 onClick={() => {
-                  setDay(option);
-                  setReservedDate(null);
-                  setFormError(null);
+                  setRegionId(region.id);
+                  setRegionOpen(false);
                 }}
               >
-                {option}
+                {region.name}
               </Chip>
             ))}
           </div>
-          <label className="mt-3 block">
-            <span className="text-[13px] font-semibold text-foreground">{RESERVE_LABEL}</span>
-            <span className="mt-0.5 block text-[12px] text-muted">{RESERVE_HINT}</span>
-            <input
-              type="date"
-              value={reservedDate ?? ""}
-              min={bounds.min}
-              max={bounds.max}
-              aria-label={RESERVE_LABEL}
-              onChange={(event) => {
-                setReservedDate(event.target.value || null);
-                setFormError(null);
-              }}
-              className="mt-1.5 h-12 w-full rounded-[18px] border border-border bg-surface px-4 text-[15px] outline-none transition-colors focus:border-brand"
-            />
-          </label>
-        </div>
-
-        <div>
-          <span className="text-[13px] font-semibold text-foreground">Seats</span>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {SEAT_OPTIONS.map((option) => (
-              <Chip key={option} active={option === seats} onClick={() => setSeats(option)}>
-                {seatsLabel(option)}
-              </Chip>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {formError ? (
-        <p role="alert" className="mt-3 text-[13px] font-semibold text-brand">
-          {formError}
-        </p>
-      ) : null}
-
-      <section className="mt-8">
-        <SectionHeader title="Scheduled routes" />
-        <ul className="space-y-2.5">
-          {RIDE_ROUTES.map((item, index) => {
-            const cheapest = item.options.reduce((best, option) =>
-              option.fare < best.fare ? option : best,
-            );
-            return (
-              <li key={item.id} className="hero-rise" style={rowDelay(index)}>
-                <SavedListRow
-                  icon={<MapPinIcon className="size-6" />}
-                  primary={`${item.from} → ${item.to}`}
-                  secondary={`${item.dayLabel} · ${item.time} · Driver ${cheapest.driver}`}
-                  badge={`$${cheapest.fare}`}
-                  onClick={() => handleRoutePick(item.id)}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      {recents.length > 0 ? (
-        <section className="mt-8">
-          <SectionHeader title="Recent destinations" />
-          <ul className="space-y-2.5">
-            {recents.map((item, index) => (
-              <li key={item} className="hero-rise" style={rowDelay(index)}>
-                <SavedListRow
-                  icon={<CarIcon className="size-6" />}
-                  primary={item}
-                  secondary="Set as drop-off"
-                  onClick={() => {
-                    setDropoff(item);
-                    setFormError(null);
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : (
-        <section className="mt-8">
-          <EmptyState title="No saved places yet." description="Drop-offs you search for show up here." />
         </section>
       )}
 
-      <section className="mt-8">
-        <SectionHeader title={PAST_RIDES_LABEL} />
-        {pastBookings.length === 0 ? (
-          <EmptyState
-            title={NO_PAST_RIDES}
-            description="Every ride you book is kept here with its receipt."
-            action={{ label: NO_PAST_RIDES_ACTION, href: "/rides" }}
-          />
-        ) : (
-          <ul className="space-y-2.5">
-            {pastBookings.slice(0, 3).map((booking, index) => (
-              <li key={booking.id} className="hero-rise" style={rowDelay(index)}>
-                <SavedListRow
-                  icon={<CarIcon className="size-6" />}
-                  primary={`${booking.pickup} → ${booking.dropoff}`}
-                  secondary={`${tripDateLabel(booking)} · ${booking.time} · ${booking.class}`}
-                  badge={`$${rideTotal(booking)}`}
-                  onClick={() => {
-                    setActiveBookingId(booking.id);
-                    setStep("status");
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <main className="flex-1 px-5 pb-32">
+        {step !== "search" && !activeBooking && <RideMap pickup={pickup} dropoff={dropoff} onPickupMove={(next) => setPickupPlace((prev) => (prev ? { ...prev, lat: next.lat, lng: next.lng } : prev))} onDropoffMove={(next) => setDropoffPlace((prev) => (prev ? { ...prev, lat: next.lat, lng: next.lng } : prev))} />}
 
-      <div className="sticky bottom-20 z-30 mt-6">
-        <button
-          type="button"
-          onClick={handleFindRides}
-          className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-        >
-          Find rides
-        </button>
-      </div>
-    </>
-  );
+        {step === "search" && (
+          <>
+            {!pickup || !dropoff ? (
+              <div className="mt-4">
+                <EmptyState title="Plan your next trip" description={GPS_NOTE} />
+              </div>
+            ) : null}
+            <RideMap pickup={pickup} dropoff={dropoff} onPickupMove={(next) => setPickupPlace((prev) => (prev ? { ...prev, lat: next.lat, lng: next.lng } : prev))} onDropoffMove={(next) => setDropoffPlace((prev) => (prev ? { ...prev, lat: next.lat, lng: next.lng } : prev))} />
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <button
+                type="button"
+                onClick={() => setSaveTarget("pickup")}
+                className="rounded-[16px] border border-border bg-surface px-4 py-3 text-left"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted">Pickup</span>
+                <span className="mt-1 block text-sm font-semibold text-ink">{pickup ? pickup.addr : GPS_PICKUP_LABEL}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSaveTarget("dropoff")}
+                className="flex items-center justify-between rounded-[16px] border border-border bg-surface px-4 py-3 text-left"
+              >
+                <span>
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-muted">Dropoff</span>
+                  <span className="mt-1 block text-sm font-semibold text-ink">{dropoff ? dropoff.addr : "Choose destination"}</span>
+                </span>
+                <PencilIcon className="h-4 w-4 text-brand" />
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  let coords: LatLng | null = null;
+                  try {
+                    const position = await getGpsPosition() as unknown;
+                    if (
+                      position &&
+                      typeof position === "object" &&
+                      typeof (position as { lat?: unknown }).lat === "number" &&
+                      typeof (position as { lng?: unknown }).lng === "number"
+                    ) {
+                      coords = { lat: (position as { lat: number }).lat, lng: (position as { lng: number }).lng };
+                    }
+                  } catch {
+                    coords = null;
+                  }
+                  if (!coords) {
+                    setGpsState("denied");
+                    setGpsError(GPS_ERROR);
+                    showToast(GPS_ERROR);
+                    return;
+                  }
+                  let addr = GPS_PICKUP_LABEL;
+                  try {
+                    const label = (await reverseGeocode(coords.lat, coords.lng)) as unknown;
+                    if (typeof label === "string" && label.trim().length > 0) addr = label.trim();
+                    else if (
+                      label &&
+                      typeof label === "object" &&
+                      typeof (label as { name?: unknown }).name === "string" &&
+                      (label as { name: string }).name.trim().length > 0
+                    ) {
+                      addr = (label as { name: string }).name.trim();
+                    }
+                  } catch {
+                    setGpsError(GPS_ERROR);
+                  }
+                  const region = activeRegion;
+                  setPickupPlace(region ? { addr, ...coords, regionId: region.id } : { addr, ...coords, regionId: null });
+                  setGpsState("granted");
+                  setGpsError(null);
+                }}
+                className="flex items-center gap-2 rounded-full bg-brand-soft px-4 py-2 text-sm font-semibold text-brand"
+              >
+                <MapPinIcon className="h-4 w-5" />
+                Use my location
+              </button>
+              {gpsState === "denied" && gpsError ? <p className="text-xs text-muted">{gpsError}</p> : null}
+            </div>
 
-  const renderChoose = () => {
-    const vehicle = vehicleFor(rideClass);
-    return (
-      <>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            aria-label="Back"
-            onClick={() => setStep("search")}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-foreground transition-colors hover:border-brand/40"
-          >
-            <ChevronLeftIcon className="size-5" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-              {`${pickup.trim()} → ${dropoff.trim()}`}
-            </h1>
-            <p className="mt-0.5 text-[13px] text-muted">
-              {reservedDate ? formatRideDate(reservedDate) : route ? route.dayLabel : DAY_LABEL[effectiveDay]}
-              {route ? ` · ${route.time}` : ""}
-            </p>
-          </div>
-        </div>
+            <SectionHeader title={SAVED_PLACE_TITLE} />
+            {rowsForSearch.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {rowsForSearch.map((row, index) => (
+                  <div key={row.key} style={rowStyle(index)}>
+                    <SavedListRow
+                      key={row.key}
+                      icon={row.icon === "clock" ? <ClockIcon className="h-5 w-5" /> : <MapPinIcon className="h-5 w-5" />}
+                      primary={row.primary}
+                      secondary={row.secondary || undefined}
+                      onClick={() => {
+                        if (row.place) {
+                          if (row.target === "dropoff") setDropoffPlace(row.place);
+                          else setPickupPlace(row.place);
+                        } else {
+                          setSaveTarget(row.target);
+                        }
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-muted">Save a place to see it here.</p>
+            )}
 
-        <p className="mt-4 text-[13px] text-muted">{FARE_NOTE}</p>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          {RIDE_CLASSES.map((option) => (
-            <Chip
-              key={option}
-              active={option === rideClass}
-              onClick={() => {
-                setRideClass(option);
-                setSelectedOptionId(null);
-              }}
-            >
-              {option}
-            </Chip>
-          ))}
-        </div>
-
-        <div className="mt-5">
-          {!route ? (
-            <div className="rounded-[16px] border border-border bg-surface p-6 text-center shadow-card">
-              <p className="text-sm font-semibold">No rides found.</p>
-              <p className="mt-1 text-[13px] text-muted">
-                {`No scheduled rides from ${pickup.trim()} to ${dropoff.trim()} on ${DAY_LABEL[effectiveDay].toLowerCase()}.`}
-              </p>
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {RIDE_DAYS.map((option) => (
-                  <Chip key={option} active={option === effectiveDay} onClick={() => setDay(option)}>
-                    {option}
+            <label className="mt-4 flex items-center justify-between rounded-[16px] border border-border bg-surface px-4 py-3">
+              <span className="flex items-center gap-2">
+                <PackageIcon className="h-5 w-5 text-brand" />
+                <span className="text-sm font-semibold text-ink">Send a parcel</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={parcelMode}
+                onChange={(event) => {
+                  setParcelMode(event.target.checked);
+                  if (!event.target.checked) setWeightTier(null);
+                  else showToast("Choose a parcel size below.");
+                }}
+              />
+            </label>
+            {parcelMode && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(["small", "medium", "large"] as WeightTier[]).map((tier) => (
+                  <Chip key={tier} active={weightTier === tier} onClick={() => setWeightTier(tier)}>
+                    {tier.charAt(0).toUpperCase() + tier.slice(1)}
                   </Chip>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setDay("Weekday");
-                  setStep("search");
-                }}
-                className="mt-4 rounded-full border border-border px-5 py-2.5 text-sm font-semibold transition-colors hover:border-brand/40"
-              >
-                Clear filters
-              </button>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {classList().map((entry) => (
+                <Chip
+                  key={entry.id}
+                  active={rideClass === entry.id}
+                  onClick={() => setRideClass(entry.id)}
+                >
+                  {entry.label}
+                </Chip>
+              ))}
             </div>
-          ) : driverCount === 0 ? (
-            <div className="rounded-[16px] border border-border bg-surface p-6 text-center shadow-card">
-              <p className="text-sm font-semibold">{`No drivers near you for ${rideClass}.`}</p>
-              {alternate ? (
-                <>
-                  <p className="mt-1 text-[13px] text-muted">
-                    {`Try ${alternate.rideClass} — drivers ${alternate.etaMinutes} min away`}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRideClass(alternate.rideClass);
-                      setSelectedOptionId(null);
-                    }}
-                    className="mt-4 rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-                  >
-                    {`Try ${alternate.rideClass}`}
-                  </button>
-                </>
-              ) : (
-                <p className="mt-1 text-[13px] text-muted">Try another day or route.</p>
+
+            <button
+              type="button"
+              onClick={() => setStep("confirm")}
+              disabled={!pickup || !dropoff}
+              className="sticky bottom-20 z-30 mx-auto mt-5 block w-full rounded-full bg-brand px-6 py-3 text-sm font-semibold text-white hover:bg-brand-strong disabled:opacity-50"
+            >
+              Find rides
+            </button>
+          </>
+        )}
+
+        {step === "confirm" && (
+          <>
+            <div className="mt-4 rounded-[16px] border border-border bg-surface p-4">
+              <div className="flex items-start justify-between">
+                <p className="text-sm font-semibold text-ink">{pickup ? pickup.addr : "--"}</p>
+                <button type="button" onClick={() => setStep("search")} className="flex items-center gap-1 text-xs font-semibold text-brand">
+                  <PencilIcon className="h-3 w-3" /> Edit
+                </button>
+              </div>
+              <p className="mt-2 text-sm font-semibold text-ink">{dropoff ? dropoff.addr : "--"}</p>
+              <div className="mt-3 flex items-center gap-3 text-xs text-muted">
+                <span className="flex items-center gap-1">
+                  <CarIcon className="h-4 w-4" /> {classList().find((entry) => entry.id === rideClass)?.label ?? rideClass}
+                </span>
+                <span className="flex items-center gap-1">
+                  <ClockIcon className="h-4 w-4" /> ETA {etaMinutes === null ? "--" : `${etaMinutes} min`}
+                </span>
+                {parcelMode ? (
+                  <span className="flex items-center gap-1">
+                    <PackageIcon className="h-4 w-4" /> {weightTier ?? "size"}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-3 text-2xl font-bold text-ink">
+                {fareEstimate === null ? "--" : moneyLabel(fareEstimate)}
+              </p>
+              <p className="text-xs text-muted">Estimated fare before confirmation.</p>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <Chip active={scheduleMode === "now"} onClick={() => setScheduleMode("now")}>
+                Now
+              </Chip>
+              <Chip active={scheduleMode === "later"} onClick={() => setScheduleMode("later")}>
+                <span className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3" /> {laterLabel}
+                </span>
+              </Chip>
+            </div>
+            {scheduleMode === "later" && (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <label className="rounded-[16px] border border-border bg-surface px-4 py-2 text-xs font-semibold text-muted">
+                  <span className="flex items-center gap-1">
+                    <ClockIcon className="h-3 w-3" /> Time
+                  </span>
+                  <input
+                    type="time"
+                    value={laterTime}
+                    onChange={(event) => setLaterTime(event.target.value)}
+                    className="mt-1 w-full bg-transparent text-sm font-semibold text-ink"
+                  />
+                </label>
+                <label className="rounded-[16px] border border-border bg-surface px-4 py-2 text-xs font-semibold text-muted">
+                  <span className="flex items-center gap-1">
+                    <CalendarIcon className="h-3 w-3" /> Date
+                  </span>
+                  <input
+                    type="date"
+                    min={dateBounds?.min}
+                    max={dateBounds?.max}
+                    value={laterDate ?? ""}
+                    onChange={(event) => setLaterDate(event.target.value)}
+                    className="mt-1 w-full bg-transparent text-sm font-semibold text-ink"
+                  />
+                </label>
+              </div>
+            )}
+
+            <NoteField
+              label="Add a note"
+              value={note}
+              onChange={setNote}
+              maxLength={150}
+              placeholder="Gate code, luggage, or a stop along the way"
+              className="mt-3"
+            />
+
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <span className="flex items-center gap-1 rounded-full bg-brand-soft px-3 py-2 font-semibold text-brand">
+                <ShieldCheckIcon className="h-3 w-3" /> Free wait {RIDE_FREE_WAIT_MINUTES} min
+              </span>
+              <span className="flex items-center gap-1 rounded-full bg-brand-soft px-3 py-2 font-semibold text-brand">
+                <ShieldCheckIcon className="h-3 w-3" /> Free cancel {RIDE_CANCEL_WINDOW_MINUTES} min
+              </span>
+            </div>
+
+            <PromiseStrip items={TRIP_PROMISES} />
+
+            <button
+              type="button"
+              onClick={beginRide}
+              className="sticky bottom-20 z-30 mx-auto mt-5 block w-full rounded-full bg-brand px-6 py-3 text-sm font-semibold text-white hover:bg-brand-strong"
+            >
+              Request driver
+            </button>
+          </>
+        )}
+
+        {step === "status" && activeBooking && (
+          <>
+            <section className="mt-4 rounded-[16px] border border-border bg-surface p-4">
+              <p className="text-sm font-semibold text-ink">{statusLabel(activeBooking)}</p>
+              {activeBooking.status === "matching" && (
+                <p className="mt-1 text-xs text-muted">Matching you with the closest driver.</p>
               )}
-            </div>
-          ) : quotes.length === 0 ? (
-            <div className="rounded-[16px] border border-border bg-surface p-6 text-center shadow-card">
-              <p className="text-sm font-semibold">{`No rides with ${seats} seats on this route.`}</p>
-              <p className="mt-1 text-[13px] text-muted">{`${seatsLabel(maxSeats)} left on this route.`}</p>
-              {maxSeats > 0 ? (
+              {activeBooking.status === "canceled" && activeBooking.failureReason && (
+                <p className="mt-1 text-xs text-muted">{FAILURE_COPY[activeBooking.failureReason] ?? FAILURE_COPY.changed_mind}</p>
+              )}
+              {(activeBooking.status === "assigned" || activeBooking.status === "arrived") && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSeats(maxSeats);
-                    setSelectedOptionId(null);
-                  }}
-                  className="mt-4 rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
+                  onClick={() => setPinDismissedKey(null)}
+                  className="mt-3 flex items-center gap-1 w-full rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong"
                 >
-                  {`Book ${seatsLabel(maxSeats)}`}
+                  <ShieldCheckIcon className="h-4 w-4" /> Show pickup code
                 </button>
-              ) : null}
-            </div>
-          ) : (
-            <ul className="space-y-2.5">
-              {quotes.map((quote, index) => {
-                const selected = quote.option.id === selectedOptionId;
-                return (
-                  <li key={quote.option.id} className="hero-rise" style={rowDelay(index)}>
+              )}
+              {activeBooking.status === "in_trip" && (
+                <button
+                  type="button"
+                  onClick={completeTrip}
+                  className="mt-3 w-full rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong"
+                >
+                  Complete dropoff
+                </button>
+              )}
+            </section>
+
+            {activeBooking.status === "canceled" && (
+              <section className="mt-3 rounded-[16px] border border-border bg-surface p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-muted">
+                    {activeBooking.cancelFee > 0 ? `Cancellation fee ${moneyLabel(activeBooking.cancelFee)}` : "No cancellation fee."}
+                  </div>
+                  <button type="button" onClick={retryBooking} className="text-xs font-semibold text-brand">
+                    Ride again
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {activeBooking.status !== "completed" && activeBooking.status !== "canceled" && (
+              <section className="mt-3 flex items-center justify-between rounded-[16px] border border-border bg-surface px-4 py-3">
+                <span className="text-sm text-ink">{moneyLabel(activeBooking.fare)} booked</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void shareRide()}
+                    className="flex items-center gap-1 rounded-full bg-brand-soft px-3 py-2 text-xs font-semibold text-brand"
+                  >
+                    <ShareIcon className="h-4 w-4" /> Share
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelRide}
+                    className="flex items-center gap-1 rounded-full bg-brand-soft px-3 py-2 text-xs font-semibold text-brand"
+                  >
+                    <XIcon className="h-4 w-4" /> Cancel
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {(activeBooking.status === "assigned" || activeBooking.status === "arrived" || activeBooking.status === "in_trip") && (
+              <section className="mt-3 rounded-[16px] border border-border bg-surface p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-ink">{activeBooking.driver || DRIVER_FALLBACK.name}</p>
+                    <p className="text-xs text-muted">
+                      {activeBooking.vehicle || DRIVER_FALLBACK.vehicle} · Plate {activeBooking.plate || DRIVER_FALLBACK.plate}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      aria-pressed={selected}
-                      onClick={() => setSelectedOptionId(quote.option.id)}
-                      className={`flex w-full items-center gap-3.5 rounded-[16px] border bg-surface p-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-hover ${
-                        selected ? "border-brand" : "border-border"
-                      }`}
+                      onClick={() => showToast("Driver calls aren't available yet.")}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand"
+                      aria-label="Call driver"
                     >
-                      <span className="flex size-14 shrink-0 items-center justify-center rounded-[14px] bg-brand-soft text-brand">
-                        <CarIcon className="size-6" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[15px] font-semibold">
-                          {`${quote.option.driver} · ${rideClass}`}
-                        </span>
-                        <span className="mt-0.5 block truncate text-[13px] text-muted">{vehicle.name}</span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted">
-                          <ClockIcon className="size-3.5" />
-                          {`Arrives in ${quote.option.etaMinutes} min`}
-                          <span aria-hidden="true">·</span>
-                          {`${quote.option.seatsLeft} seat${quote.option.seatsLeft === 1 ? "" : "s"} left`}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[15px] font-semibold">{`$${quote.fare}`}</span>
+                      <PhoneIcon className="h-4 w-4" />
                     </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+                    <button
+                      type="button"
+                      onClick={() => showToast("Driver chat isn't available yet.")}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand"
+                      aria-label="Message driver"
+                    >
+                      <MessageIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDestinationOpen(true)}
+                  className="mt-3 flex items-center gap-1 text-xs font-semibold text-brand"
+                >
+                  <PencilIcon className="h-4 w-4" /> Change destination
+                </button>
+              </section>
+            )}
 
-        {route && driverCount > 0 && quotes.length > 0 ? (
-          <NoteField
-            label="Note for your driver"
-            value={note}
-            onChange={setNote}
-            maxLength={150}
-            placeholder="Gate code, luggage, or a stop along the way"
-            className="mt-6"
-          />
-        ) : null}
-
-        <div className="sticky bottom-20 z-30 mt-6">
-          <button
-            type="button"
-            disabled={!selectedOptionId}
-            onClick={confirmBooking}
-            className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
-          >
-            Confirm pickup
-          </button>
-        </div>
-      </>
-    );
-  };
-
-  const renderDriverCard = (booking: RideBooking) => (
-    <div className="mt-5 rounded-[16px] border border-border bg-surface p-4 shadow-card">
-      <p className="text-[15px] font-semibold">{`${booking.pickup} → ${booking.dropoff}`}</p>
-      <p className="mt-1 text-[13px] text-muted">
-        {`${tripDateLabel(booking)} · ${booking.time} · ${booking.class}`}
-      </p>
-      <p className="mt-1 text-[13px] text-muted">
-        {`${booking.driver} · ${booking.vehicle} · Plate ${booking.plate}`}
-      </p>
-      <p className="mt-1 text-[13px] text-muted">{seatsLabel(booking.seats)}</p>
-      <p className="mt-3 text-[15px] font-semibold">{`$${booking.fare} upfront`}</p>
-      {booking.note ? (
-        <p className="mt-2 text-[13px] text-muted">{`Note: ${booking.note}`}</p>
-      ) : null}
-      {booking.destinationChanges.length > 0 ? (
-        <p className="mt-2 text-[13px] text-muted">
-          {`Destination changed to ${booking.dropoff}. ${FINAL_AMOUNT_NOTE}`}
-        </p>
-      ) : null}
-    </div>
-  );
-
-  const renderTripActions = (booking: RideBooking) => (
-    <div className="mt-4 grid grid-cols-3 gap-2">
-      <button
-        type="button"
-        onClick={() => setNotice(CONTACT_COPY)}
-        className="flex flex-col items-center gap-1.5 rounded-[16px] border border-border bg-surface px-2 py-3 text-[12px] font-semibold transition-colors hover:border-brand/40"
-      >
-        <PhoneIcon className="size-5 text-brand" />
-        {CALL_DRIVER}
-      </button>
-      <button
-        type="button"
-        onClick={() => setNotice(CONTACT_COPY)}
-        className="flex flex-col items-center gap-1.5 rounded-[16px] border border-border bg-surface px-2 py-3 text-[12px] font-semibold transition-colors hover:border-brand/40"
-      >
-        <MessageIcon className="size-5 text-brand" />
-        {MESSAGE_DRIVER}
-      </button>
-      <button
-        type="button"
-        onClick={() => shareRide(booking)}
-        className="flex flex-col items-center gap-1.5 rounded-[16px] border border-border bg-surface px-2 py-3 text-[12px] font-semibold transition-colors hover:border-brand/40"
-      >
-        <ShareIcon className="size-5 text-brand" />
-        {SHARE_RIDE_TITLE}
-      </button>
-    </div>
-  );
-
-  const renderDestinationEditor = (booking: RideBooking) => (
-    <div className="mt-4 rounded-[16px] border border-border bg-surface p-4 shadow-card">
-      <p className="text-[15px] font-semibold">{CHANGE_DESTINATION}</p>
-      <p className="mt-1 text-[13px] text-muted">{FINAL_AMOUNT_NOTE}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {KNOWN_PLACES.filter((place) => normalizePlace(place) !== normalizePlace(booking.dropoff)).map(
-          (place) => (
-            <Chip key={place} onClick={() => changeDestination(booking, place)}>
-              {place}
-            </Chip>
-          ),
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => setDestinationOpen(false)}
-        className="mt-4 rounded-full border border-border px-5 py-2.5 text-sm font-semibold transition-colors hover:border-brand/40"
-      >
-        Keep destination
-      </button>
-    </div>
-  );
-
-  const renderReceipt = (booking: RideBooking) => (
-    <div className="mt-5 rounded-[16px] border border-border bg-surface p-4 shadow-card">
-      <div className="flex items-center justify-between">
-        <p className="text-[15px] font-semibold">Receipt</p>
-        <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand">
-          {`$${rideTotal(booking)}`}
-        </span>
-      </div>
-      <dl className="mt-3 space-y-1.5 text-[13px]">
-        <div className="flex items-center justify-between">
-          <dt className="text-muted">Fare</dt>
-          <dd className="font-semibold">{`$${booking.fare}`}</dd>
-        </div>
-        {booking.waitFee > 0 ? (
-          <div className="flex items-center justify-between">
-            <dt className="text-muted">Wait time fee</dt>
-            <dd className="font-semibold">{`$${booking.waitFee}`}</dd>
-          </div>
-        ) : null}
-        {booking.cancelFee > 0 ? (
-          <div className="flex items-center justify-between">
-            <dt className="text-muted">Cancellation fee</dt>
-            <dd className="font-semibold">{`$${booking.cancelFee}`}</dd>
-          </div>
-        ) : null}
-        {booking.tipPercent > 0 ? (
-          <div className="flex items-center justify-between">
-            <dt className="text-muted">Tip</dt>
-            <dd className="font-semibold">{`$${rideTipAmount(booking)}`}</dd>
-          </div>
-        ) : null}
-      </dl>
-      <p className="mt-3 text-[12px] text-muted">
-        {booking.waitFee > 0
-          ? "The wait time fee covers time past the free wait window."
-          : "No extra charges were added to this trip."}
-      </p>
-    </div>
-  );
-
-  const renderStatus = () => {
-    if (!activeBooking) {
-      return (
-        <>
-          <div className="hero-rise">
-            <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-              {NO_ACTIVE_RIDE_TITLE}
-            </h1>
-            <p className="mt-2 text-[15px] text-muted">{NO_ACTIVE_RIDE_SUB}</p>
-          </div>
-          <div className="sticky bottom-20 z-30 mt-6">
-            <button
-              type="button"
-              onClick={() => setStep("search")}
-              className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-            >
-              {BOOK_A_RIDE}
-            </button>
-          </div>
-        </>
-      );
-    }
-
-    const booking = activeBooking;
-
-    if (booking.status === "cancelled") {
-      return (
-        <>
-          <div className="hero-rise">
-            <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-              Ride cancelled.
-            </h1>
-            <p className="mt-2 text-[15px] text-muted">
-              {`${booking.pickup} → ${booking.dropoff} · ${tripDateLabel(booking)} · ${booking.time}`}
-            </p>
-          </div>
-          {booking.cancelFee > 0 ? (
-            <div className="mt-4 rounded-[16px] border border-border bg-surface p-4 shadow-card">
-              <p className="text-[15px] font-semibold">{`Cancellation fee $${booking.cancelFee}`}</p>
-              <p className="mt-1 text-[13px] text-muted">{CANCEL_FEE_COPY}</p>
-            </div>
-          ) : null}
-          <div className="sticky bottom-20 z-30 mt-6">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveBookingId(null);
-                setStep("search");
-              }}
-              className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-            >
-              {BOOK_ANOTHER_RIDE}
-            </button>
-          </div>
-        </>
-      );
-    }
-
-    if (booking.status === "completed") {
-      if (booking.rating === 0) {
-        return (
-          <>
-            <div className="hero-rise">
-              <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-                {TIP_TITLE}
-              </h1>
-              <p className="mt-2 text-[15px] text-muted">{TIP_SUBTITLE}</p>
-            </div>
-            {renderDriverCard(booking)}
-            <div className="mt-5">
-              <p className="text-[13px] font-semibold text-foreground">Tip</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {TIP_CHIPS.map((option) => (
-                  <Chip
-                    key={option}
-                    active={tipPercent === option}
-                    onClick={() => setTipPercent(option)}
-                  >
-                    {tipLabel(option)}
-                  </Chip>
-                ))}
-              </div>
-            </div>
-            <div className="mt-5">
-              <p className="text-[13px] font-semibold text-foreground">Rating</p>
-              <div className="mt-2 flex items-center gap-2">
-                {RATING_VALUES.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-label={`${value} star${value === 1 ? "" : "s"}`}
-                    aria-pressed={rating === value}
-                    onClick={() => setRating(value)}
-                    className={`flex size-10 items-center justify-center rounded-full border transition-colors ${
-                      rating !== null && value <= rating
-                        ? "border-brand bg-brand-soft text-brand"
-                        : "border-border bg-surface text-muted"
-                    }`}
-                  >
-                    <StarIcon className="size-5" />
+            {activeBooking.status === "completed" && (
+              <section className="mt-3 rounded-[16px] border border-border bg-surface p-4">
+                <p className="text-sm font-bold text-ink">Trip completed</p>
+                <p className="mt-1 text-xs text-muted">
+                  {activeBooking.pickup} → {activeBooking.dropoff}
+                </p>
+                <div className="mt-3 flex items-center justify-between text-xs">
+                  <span className="text-muted">Fare</span>
+                  <span className="font-semibold text-ink">{moneyLabel(activeBooking.fare)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-xs">
+                  <span className="text-muted">Wait fee</span>
+                  <span className="font-semibold text-ink">{moneyLabel(activeBooking.waitFee)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-xs">
+                  <span className="text-muted">Tip {activeBooking.tipPercent}%</span>
+                  <span className="font-semibold text-ink">{moneyLabel(safeTipAmount(activeBooking, activeBooking.tipPercent))}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-sm">
+                  <span className="font-semibold text-ink">Total</span>
+                  <span className="font-bold text-ink">{moneyLabel(safeTotal(activeBooking))}</span>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  {TIP_CHIPS.map((chip) => (
+                    <Chip
+                      key={chip}
+                      active={tipPercent === chip}
+                      onClick={() => setTipPercent(chip)}
+                    >
+                      {chip === 0 ? "No tip" : `${chip}%`}
+                    </Chip>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-1">
+                  {RATING_VALUES.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setRating(value)}
+                      className="text-xl"
+                      aria-label={`Rate ${value} stars`}
+                    >
+                      <StarIcon className={value <= rating ? "h-6 w-6 text-amber-400" : "h-6 w-6 text-muted"} />
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <button type="button" onClick={retryBooking} className="text-xs font-semibold text-brand">
+                    Ride again
                   </button>
-                ))}
-              </div>
-            </div>
-            {notice ? (
-              <p role="alert" className="mt-3 text-[13px] font-semibold text-brand">
-                {notice}
-              </p>
-            ) : null}
-            <div className="sticky bottom-20 z-30 mt-6">
-              <button
-                type="button"
-                onClick={() => submitRating(booking)}
-                className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-              >
-                {SUBMIT_RATING}
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    onClick={submitRating}
+                    className="rounded-full bg-brand px-4 py-2 text-xs font-semibold text-white hover:bg-brand-strong"
+                  >
+                    Send rating
+                  </button>
+                </div>
+              </section>
+            )}
           </>
-        );
-      }
-      return (
-        <>
-          <div className="hero-rise">
-            <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-              Trip completed.
-            </h1>
-            <p className="mt-2 text-[15px] text-muted">
-              {`${booking.pickup} → ${booking.dropoff} · ${tripDateLabel(booking)} · ${booking.time}`}
-            </p>
-          </div>
-          {renderReceipt(booking)}
-          <div className="sticky bottom-20 z-30 mt-6">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveBookingId(null);
-                setStep("search");
-              }}
-              className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-            >
-              {BOOK_ANOTHER_RIDE}
-            </button>
-          </div>
-        </>
-      );
-    }
-
-    const waitExpired =
-      booking.arrivedAt !== null && now - new Date(booking.arrivedAt).getTime() >= RIDE_FREE_WAIT_MINUTES * 60_000;
-
-    return (
-      <>
-        <div className="hero-rise">
-          <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-            {booking.status === "matching"
-              ? "Finding your driver…"
-              : booking.status === "assigned"
-                ? "Driver assigned"
-                : booking.status === "arrived"
-                  ? ARRIVED_TITLE
-                  : IN_TRIP_TITLE}
-          </h1>
-          <p className="mt-2 text-[15px] text-muted">
-            {booking.status === "matching"
-              ? MATCHING_SUBTITLE
-              : booking.status === "assigned"
-                ? `${DRIVER_ASSIGNED_SUBTITLE} ${booking.etaMinutes} min`
-                : booking.status === "arrived"
-                  ? waitExpired
-                    ? WAIT_OVER_SUBTITLE
-                    : ARRIVED_SUBTITLE
-                  : `${booking.dropoff} · ${FINAL_AMOUNT_NOTE}`}
-          </p>
-        </div>
-
-        {renderDriverCard(booking)}
-
-        {booking.status === "assigned" || booking.status === "arrived" ? (
-          renderTripActions(booking)
-        ) : null}
-
-        {notice ? (
-          <p role="status" className="mt-3 text-[13px] font-semibold text-brand">
-            {notice}
-          </p>
-        ) : null}
-
-        {booking.status === "assigned" ? (
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => setDestinationOpen((open) => !open)}
-              className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-2.5 text-[13px] font-semibold transition-colors hover:border-brand/40"
-            >
-              <PencilIcon className="size-4 text-brand" />
-              {CHANGE_DESTINATION}
-            </button>
-            {destinationOpen ? renderDestinationEditor(booking) : null}
-          </div>
-        ) : null}
-
-        <div className="mt-5">
-          <PromiseStrip
-            items={
-              booking.status === "matching"
-                ? [CANCEL_COPY, FARE_NOTE]
-                : booking.status === "assigned"
-                  ? [CANCEL_COPY_ASSIGNED, FARE_NOTE]
-                  : booking.status === "arrived"
-                    ? [ARRIVED_SUBTITLE, FARE_NOTE]
-                    : [FINAL_AMOUNT_NOTE, FARE_NOTE]
-            }
-          />
-        </div>
-
-        <div className="sticky bottom-20 z-30 mt-6 space-y-2.5">
-          {booking.status === "arrived" ? (
-            <button
-              type="button"
-              onClick={() => startTrip(booking)}
-              className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-            >
-              {START_RIDE}
-            </button>
-          ) : null}
-          {booking.status === "in_trip" ? (
-            <button
-              type="button"
-              onClick={() => endTrip(booking)}
-              className="w-full rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-            >
-              {END_RIDE}
-            </button>
-          ) : null}
-          {isRideCancellable(booking, new Date(now)) ? (
-            <button
-              type="button"
-              onClick={() => cancelBooking(booking)}
-              className="w-full rounded-full border border-border bg-surface px-5 py-3 text-sm font-semibold transition-colors hover:border-brand/40"
-            >
-              {CANCEL_RIDE}
-            </button>
-          ) : null}
-        </div>
-      </>
-    );
-  };
-
-  return (
-    <>
-      <main className="mx-auto max-w-lg px-5 pb-24 pt-6">
-        {step === "search" ? renderSearch() : step === "choose" ? renderChoose() : renderStatus()}
+        )}
       </main>
-      {toast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed inset-x-4 bottom-24 z-[80] mx-auto max-w-md rounded-full bg-brand-strong px-5 py-3 text-center text-sm font-semibold text-white shadow-raised"
-        >
+
+      {saveTarget && (
+        <section className="fixed inset-x-3 bottom-3 z-50 rounded-[24px] border border-border bg-surface p-5">
+          <div className="flex items-center justify-between">
+            <SectionHeader title={saveTarget === "pickup" ? PICKUP_PROMPT : CHOOSE_PLACE_TITLE} />
+            <button type="button" onClick={() => setSaveTarget(null)} aria-label="Close">
+              <XIcon className="h-5 w-5 text-muted" />
+            </button>
+          </div>
+          <LocationSearch
+            label={saveTarget === "pickup" ? "Pickup" : "Dropoff"}
+            placeholder={saveTarget === "pickup" ? PICKUP_PROMPT : DROPOFF_PROMPT}
+            showGps={saveTarget === "pickup"}
+            popular={popular.map((place) => place.addr)}
+            onPick={(value) => {
+              const target = saveTarget;
+              void (target ? commitPlace(value, target) : Promise.resolve());
+            }}
+            value={saveTarget === "pickup" ? (pickup?.addr ?? null) : (dropoff?.addr ?? null)}
+          />
+        </section>
+      )}
+
+      {destinationOpen && (
+        <section className="fixed inset-x-3 bottom-3 z-50 rounded-[24px] border border-border bg-surface p-5">
+          <div className="flex items-center justify-between">
+            <SectionHeader title={CHOOSE_PLACE_TITLE} />
+            <button type="button" onClick={() => setDestinationOpen(false)} aria-label="Close">
+              <XIcon className="h-5 w-5 text-muted" />
+            </button>
+          </div>
+          <LocationSearch
+            label="Dropoff"
+            placeholder={DROPOFF_PROMPT}
+            showGps={false}
+            popular={popular.map((place) => place.addr)}
+            onPick={(value) => {
+              void changeDestination(value);
+            }}
+            value={activeBooking?.dropoff ?? null}
+          />
+        </section>
+      )}
+
+      {activeBooking && (activeBooking.status === "assigned" || activeBooking.status === "arrived" || activeBooking.status === "in_trip") && (
+        <PinCodeSheet
+          booking={activeBooking}
+          open={pinOpen}
+          step="code"
+          mode="start"
+          attemptsLeft={Math.max(0, PIN_STRIKE_LIMIT - activeBooking.pinAttempts)}
+          onDismiss={dismissPin}
+          onPinSuccess={verifyPin}
+          onWrongAttempt={pinWrongAttempt}
+          onCompleteTrip={completeTrip}
+          onFailHandoff={pinFailHandoff}
+        />
+      )}
+
+      {toast && (
+        <div className="fixed inset-x-6 bottom-24 z-40 rounded-[16px] bg-surface px-4 py-3 text-center text-sm font-semibold text-ink shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
           {toast}
         </div>
-      ) : null}
-    </>
+      )}
+    </div>
   );
 }

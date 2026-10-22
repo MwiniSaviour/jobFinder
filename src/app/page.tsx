@@ -36,7 +36,7 @@ const TILE_JOB_SUB = `${jobs.length} open jobs`;
 const TILE_SERVICE_LABEL = "Hire a pro";
 const TILE_SERVICE_SUB = `${homeServices.length} top services`;
 const TILE_RIDE_LABEL = "Book a ride";
-const TILE_RIDE_SUB = "5 rides posted · from $10";
+const TILE_RIDE_SUB = "5 rides posted · from ₵60";
 
 const featuredJobs = jobs
   .filter((job) => job.salary !== null)

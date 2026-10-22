@@ -135,7 +135,7 @@ export function BookingsList() {
                 <div className="flex items-start gap-3.5">
                   <CategoryTile category={booking.category} />
                   <div className="min-w-0 flex-1">
-                    <span className="block w-fit rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand">
+                    <span className="block w-fit rounded-full bg-brand-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand">
                       {SERVICE_STATUS_LABEL[booking.status]}
                     </span>
                     <h3 className="mt-1.5 truncate text-[15px] font-semibold">{booking.serviceName}</h3>

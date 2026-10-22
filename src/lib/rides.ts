@@ -198,9 +198,10 @@ export function toDateInput(value: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export function formatRideDate(value: string): string {
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return value;
+export function formatRideDate(value: string | Date): string {
+  const stamp = typeof value === "string" ? value : toDateInput(value);
+  const parsed = new Date(`${stamp}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return stamp;
   return parsed.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",

@@ -223,7 +223,7 @@ export function ServicesResults({ services }: { services: ServiceListing[] }) {
                     <div className="flex items-start gap-3.5">
                       <CategoryTile category={service.category} />
                       <div className="min-w-0 flex-1">
-                        <span className="block w-fit rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand">
+                        <span className="block w-fit rounded-full bg-brand-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand">
                           {service.category}
                         </span>
                         <h2 className="mt-1.5 truncate text-[15px] font-semibold">{service.name}</h2>

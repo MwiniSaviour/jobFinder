@@ -51,6 +51,8 @@ export type ProfileState = {
   qualifications: Qualification[];
   paymentMethods: PaymentMethod[];
   notifications: ProfileNotifications;
+  region?: string | null;
+  savedPlaces?: string[];
 };
 
 export type IdentityPatch = Pick<
@@ -65,6 +67,8 @@ export function freshProfile(): ProfileState {
     email: "",
     phone: "",
     city: "",
+    region: null,
+    savedPlaces: [],
     skills: [],
     qualifications: [],
     paymentMethods: [],
@@ -196,6 +200,11 @@ export function updateIdentity(patch: IdentityPatch): void {
     phone: patch.phone.trim(),
     city: patch.city.trim(),
   });
+}
+
+export function setRegion(value: string | null): void {
+  const current = readProfile();
+  writeProfile({ ...current, region: value });
 }
 
 export function setNotifications(next: ProfileNotifications): void {

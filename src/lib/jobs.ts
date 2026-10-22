@@ -1,4 +1,5 @@
 import { JOB_CATEGORIES } from "./categories";
+import { formatCedis } from "./geo";
 
 export type SortKey = "new" | "pay";
 
@@ -24,8 +25,8 @@ export type JobListing = {
 
 export function salaryLabel(salary: Salary): string {
   if (!salary) return "";
-  const hourly = `$${salary.amount.toFixed(2).replace(/\.00$/, "")}/hr`;
-  return `${salary.from ? "From " : ""}${hourly}${salary.est ? " est." : ""}`;
+  const pay = formatCedis(salary.amount) + "/mo";
+  return `${salary.from ? "From " : ""}${pay}${salary.est ? " est." : ""}`;
 }
 
 export const CATEGORIES = JOB_CATEGORIES.map((category) => category.name);
@@ -51,7 +52,7 @@ export const jobs: JobListing[] = [
     posted: "2 days ago",
     blurb: "Evening and weekend grocery runs around the neighborhood. Own vehicle preferred.",
     category: "Delivery",
-    salary: { amount: 19 },
+    salary: { amount: 2200 },
     rating: 4.7,
     reviews: 128,
   },
@@ -64,7 +65,7 @@ export const jobs: JobListing[] = [
     posted: "3 days ago",
     blurb: "Front-of-house service at a cozy neighborhood cafe. Premium espresso experience a plus.",
     category: "Food & drink",
-    salary: { amount: 18.5 },
+    salary: { amount: 2000 },
     rating: 4.6,
     reviews: 94,
   },
@@ -77,7 +78,7 @@ export const jobs: JobListing[] = [
     posted: "4 days ago",
     blurb: "Build clean client-facing interfaces with React and Tailwind for early-stage products.",
     category: "Tech",
-    salary: { from: true, est: true, amount: 55 },
+    salary: { from: true, est: true, amount: 6500 },
     rating: 4.9,
     reviews: 61,
   },
@@ -90,7 +91,7 @@ export const jobs: JobListing[] = [
     posted: "5 days ago",
     blurb: "Drive flexible city routes with weekly payouts and no dress code requirements.",
     category: "Driving",
-    salary: { from: true, est: true, amount: 16 },
+    salary: { from: true, est: true, amount: 2600 },
     rating: 4.4,
     reviews: 210,
   },
@@ -103,7 +104,7 @@ export const jobs: JobListing[] = [
     posted: "6 days ago",
     blurb: "One-on-one math and science tutoring for middle school students after dismissal.",
     category: "Education",
-    salary: { from: true, est: true, amount: 15 },
+    salary: { from: true, est: true, amount: 1800 },
     rating: 4.8,
     reviews: 42,
   },
@@ -116,7 +117,7 @@ export const jobs: JobListing[] = [
     posted: "1 week ago",
     blurb: "Order picking and packing with paid overtime during seasonal peaks.",
     category: "Warehouse",
-    salary: { amount: 17.5 },
+    salary: { amount: 2400 },
     rating: 4.2,
     reviews: 75,
   },
@@ -142,7 +143,7 @@ export const jobs: JobListing[] = [
     posted: "1 week ago",
     blurb: "Stock shelves and help shoppers during evening and weekend shifts.",
     category: "Retail",
-    salary: { amount: 15.5 },
+    salary: { amount: 1700 },
     rating: 4.4,
     reviews: 87,
   },
@@ -155,7 +156,7 @@ export const jobs: JobListing[] = [
     posted: "4 days ago",
     blurb: "Light cleaning of offices after hours. Supplies and training provided.",
     category: "Cleaning",
-    salary: { amount: 16 },
+    salary: { amount: 1600 },
     rating: 4.5,
     reviews: 56,
   },
@@ -168,7 +169,7 @@ export const jobs: JobListing[] = [
     posted: "6 days ago",
     blurb: "Enter invoices and receipts into our ledger system with steady weekly hours.",
     category: "Office",
-    salary: { est: true, amount: 18 },
+    salary: { est: true, amount: 2500 },
     rating: 4.6,
     reviews: 29,
   },
@@ -181,7 +182,7 @@ export const jobs: JobListing[] = [
     posted: "5 days ago",
     blurb: "Overnight patrols and visitor check-ins at the convention center.",
     category: "Security",
-    salary: { from: true, amount: 17 },
+    salary: { from: true, amount: 2300 },
     rating: 4.3,
     reviews: 102,
   },
@@ -194,7 +195,7 @@ export const jobs: JobListing[] = [
     posted: "1 day ago",
     blurb: "Spend afternoons with seniors: conversation, walks, and light meal prep.",
     category: "Caregiving",
-    salary: { amount: 17.5 },
+    salary: { amount: 2400 },
     rating: 4.8,
     reviews: 64,
   },

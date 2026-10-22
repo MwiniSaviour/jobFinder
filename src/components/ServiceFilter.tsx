@@ -52,7 +52,7 @@ export function ServiceFilter({ services }: { services: HomeService[] }) {
             >
               <CategoryTile category={service.category} />
               <span className="min-w-0 flex-1">
-                <span className="inline-flex w-fit rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand">
+                <span className="inline-flex w-fit rounded-full bg-brand-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand">
                   {service.category}
                 </span>
                 <span className="mt-1 block truncate text-[15px] font-semibold text-foreground">

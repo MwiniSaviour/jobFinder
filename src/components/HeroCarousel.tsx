@@ -17,7 +17,7 @@ type Slide = {
 const SLIDES: Slide[] = [
   {
     title: "Book a ride",
-    sub: "From $6.00 · ~3 min away. Fare shown upfront, always.",
+    sub: "From ₵45 · ~3 min away. Fare shown upfront, always.",
     cta: "Get started",
     href: "/rides",
     bg: "bg-[radial-gradient(130%_150%_at_88%_-10%,#0891b2_0%,#0e7490_48%,#155e75_100%)]",
