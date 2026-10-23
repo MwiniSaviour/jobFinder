@@ -32,6 +32,7 @@ import {
 import type { RideBooking } from "@/lib/bookings";
 import {
   GH_REGIONS,
+  GpsError,
   etaMinutesFor,
   fareBreakdown,
   formatCedis,
@@ -41,6 +42,7 @@ import {
   nearestRegion,
   popularPlaces,
   regionForName,
+  resolveDigitalAddress,
   reverseGeocode,
   searchPlaces,
 } from "@/lib/geo";
@@ -95,6 +97,8 @@ const SHARE_RIDE_TITLE = "Share ride";
 const SHARE_RIDE_COPY = "Where I'm headed, on JobFinder.";
 const GPS_NOTE = "Allow location access, or set pickup manually.";
 const GPS_ERROR = "We couldn't reach your location.";
+const GPS_DENIED = "Location permission is off. Allow it, or set pickup manually.";
+const DIGITAL_ERROR = "That digital address wasn't found.";
 const GPS_PICKUP_LABEL = "Set pickup manually";
 const MATCH_DELAY_SECONDS = 6;
 const DRIVER_ARRIVES_AFTER_SECONDS = 25;
@@ -470,8 +474,10 @@ export default function RidesClient() {
   const [pickupPlace, setPickupPlace] = useState<PlaceResult | null>(null);
   const [dropoffPlace, setDropoffPlace] = useState<PlaceResult | null>(null);
   const [saveTarget, setSaveTarget] = useState<"pickup" | "dropoff" | null>(null);
+  const [digitalCode, setDigitalCode] = useState("");
+  const [digitalBusy, setDigitalBusy] = useState(false);
   const [popular, setPopular] = useState<PlaceResult[]>([]);
-  const [gpsState, setGpsState] = useState<"unknown" | "granted" | "denied">("unknown");
+  const [gpsState, setGpsState] = useState<"unknown" | "loading" | "granted" | "denied">("unknown");
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [rideClass, setRideClass] = useState<RideClass>("Economy");
   const [parcelMode, setParcelMode] = useState(false);
@@ -682,6 +688,33 @@ export default function RidesClient() {
     },
     [activeRegion, showToast],
   );
+
+  const pickGpsLocation = useCallback(async () => {
+    setGpsState("loading");
+    setGpsError(null);
+    try {
+      const coords = await getGpsPosition();
+      let addr = GPS_PICKUP_LABEL;
+      try {
+        const label = await reverseGeocode(coords.lat, coords.lng);
+        if (typeof label.name === "string" && label.name.trim().length > 0) {
+          addr = label.name.trim();
+        }
+      } catch {}
+      setPickupPlace(
+        activeRegion
+          ? { addr, ...coords, regionId: activeRegion.id }
+          : { addr, ...coords, regionId: null },
+      );
+      setGpsState("granted");
+      setGpsError(null);
+    } catch (error) {
+      const gpsFailed = error instanceof GpsError && error.kind === "denied" ? GPS_DENIED : GPS_ERROR;
+      setGpsState("denied");
+      setGpsError(gpsFailed);
+      showToast(gpsFailed);
+    }
+  }, [activeRegion, showToast]);
 
   const changeDestination = useCallback(
     async (value: unknown) => {
@@ -1027,47 +1060,7 @@ export default function RidesClient() {
               </button>
               <button
                 type="button"
-                onClick={async () => {
-                  let coords: LatLng | null = null;
-                  try {
-                    const position = await getGpsPosition() as unknown;
-                    if (
-                      position &&
-                      typeof position === "object" &&
-                      typeof (position as { lat?: unknown }).lat === "number" &&
-                      typeof (position as { lng?: unknown }).lng === "number"
-                    ) {
-                      coords = { lat: (position as { lat: number }).lat, lng: (position as { lng: number }).lng };
-                    }
-                  } catch {
-                    coords = null;
-                  }
-                  if (!coords) {
-                    setGpsState("denied");
-                    setGpsError(GPS_ERROR);
-                    showToast(GPS_ERROR);
-                    return;
-                  }
-                  let addr = GPS_PICKUP_LABEL;
-                  try {
-                    const label = (await reverseGeocode(coords.lat, coords.lng)) as unknown;
-                    if (typeof label === "string" && label.trim().length > 0) addr = label.trim();
-                    else if (
-                      label &&
-                      typeof label === "object" &&
-                      typeof (label as { name?: unknown }).name === "string" &&
-                      (label as { name: string }).name.trim().length > 0
-                    ) {
-                      addr = (label as { name: string }).name.trim();
-                    }
-                  } catch {
-                    setGpsError(GPS_ERROR);
-                  }
-                  const region = activeRegion;
-                  setPickupPlace(region ? { addr, ...coords, regionId: region.id } : { addr, ...coords, regionId: null });
-                  setGpsState("granted");
-                  setGpsError(null);
-                }}
+                onClick={pickGpsLocation}
                 className="flex items-center gap-2 rounded-full bg-brand-soft px-4 py-2 text-sm font-semibold text-brand"
               >
                 <MapPinIcon className="h-4 w-5" />
@@ -1415,46 +1408,95 @@ export default function RidesClient() {
       </main>
 
       {saveTarget && (
-        <section className="fixed inset-x-3 bottom-3 z-50 rounded-[24px] border border-border bg-surface p-5">
-          <div className="flex items-center justify-between">
-            <SectionHeader title={saveTarget === "pickup" ? PICKUP_PROMPT : CHOOSE_PLACE_TITLE} />
-            <button type="button" onClick={() => setSaveTarget(null)} aria-label="Close">
-              <XIcon className="h-5 w-5 text-muted" />
-            </button>
-          </div>
-          <LocationSearch
-            label={saveTarget === "pickup" ? "Pickup" : "Dropoff"}
-            placeholder={saveTarget === "pickup" ? PICKUP_PROMPT : DROPOFF_PROMPT}
-            showGps={saveTarget === "pickup"}
-            popular={popular.map((place) => place.addr)}
-            onPick={(value) => {
-              const target = saveTarget;
-              void (target ? commitPlace(value, target) : Promise.resolve());
-            }}
-            value={saveTarget === "pickup" ? (pickup?.addr ?? null) : (dropoff?.addr ?? null)}
-          />
-        </section>
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/40" onClick={() => setSaveTarget(null)} />
+          <section className="fixed inset-x-3 bottom-3 z-[70] max-h-[80dvh] overflow-y-auto rounded-[24px] border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between">
+              <SectionHeader title={saveTarget === "pickup" ? PICKUP_PROMPT : CHOOSE_PLACE_TITLE} />
+              <button type="button" onClick={() => setSaveTarget(null)} aria-label="Close">
+                <XIcon className="h-5 w-5 text-muted" />
+              </button>
+            </div>
+            <form
+              className="mt-4 flex items-center gap-2"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const target = saveTarget;
+                if (!target || digitalBusy) return;
+                setDigitalBusy(true);
+                try {
+                  const place = await resolveDigitalAddress(digitalCode.trim());
+                  if (!place) {
+                    showToast(DIGITAL_ERROR);
+                    return;
+                  }
+                  await commitPlace(place, target);
+                  setDigitalCode("");
+                } finally {
+                  setDigitalBusy(false);
+                }
+              }}
+            >
+              <input
+                type="text"
+                value={digitalCode}
+                onChange={(event) => setDigitalCode(event.target.value.toUpperCase())}
+                placeholder="Digital address e.g. GA-183-8164"
+                aria-label="Digital address"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                className="h-11 min-w-0 flex-1 rounded-[16px] border border-border bg-surface px-4 text-sm outline-none focus:border-brand"
+              />
+              <button
+                type="submit"
+                disabled={digitalBusy || digitalCode.trim().length === 0}
+                className="h-11 rounded-[16px] bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {digitalBusy ? "Finding…" : "Find"}
+              </button>
+            </form>
+            <LocationSearch
+              label={saveTarget === "pickup" ? "Pickup" : "Dropoff"}
+              placeholder={saveTarget === "pickup" ? PICKUP_PROMPT : DROPOFF_PROMPT}
+              showGps={saveTarget === "pickup"}
+              gpsState={gpsState === "loading" ? "loading" : gpsState === "denied" ? "denied" : "idle"}
+              popular={popular.map((place) => place.addr)}
+              onPick={(value) => {
+                const target = saveTarget;
+                void (target ? commitPlace(value, target) : Promise.resolve());
+              }}
+              onGpsPick={() => {
+                void pickGpsLocation();
+              }}
+              value={saveTarget === "pickup" ? (pickup?.addr ?? null) : (dropoff?.addr ?? null)}
+            />
+          </section>
+        </>
       )}
 
       {destinationOpen && (
-        <section className="fixed inset-x-3 bottom-3 z-50 rounded-[24px] border border-border bg-surface p-5">
-          <div className="flex items-center justify-between">
-            <SectionHeader title={CHOOSE_PLACE_TITLE} />
-            <button type="button" onClick={() => setDestinationOpen(false)} aria-label="Close">
-              <XIcon className="h-5 w-5 text-muted" />
-            </button>
-          </div>
-          <LocationSearch
-            label="Dropoff"
-            placeholder={DROPOFF_PROMPT}
-            showGps={false}
-            popular={popular.map((place) => place.addr)}
-            onPick={(value) => {
-              void changeDestination(value);
-            }}
-            value={activeBooking?.dropoff ?? null}
-          />
-        </section>
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/40" onClick={() => setDestinationOpen(false)} />
+          <section className="fixed inset-x-3 bottom-3 z-[70] max-h-[80dvh] overflow-y-auto rounded-[24px] border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between">
+              <SectionHeader title={CHOOSE_PLACE_TITLE} />
+              <button type="button" onClick={() => setDestinationOpen(false)} aria-label="Close">
+                <XIcon className="h-5 w-5 text-muted" />
+              </button>
+            </div>
+            <LocationSearch
+              label="Dropoff"
+              placeholder={DROPOFF_PROMPT}
+              showGps={false}
+              popular={popular.map((place) => place.addr)}
+              onPick={(value) => {
+                void changeDestination(value);
+              }}
+              value={activeBooking?.dropoff ?? null}
+            />
+          </section>
+        </>
       )}
 
       {activeBooking && (activeBooking.status === "assigned" || activeBooking.status === "arrived" || activeBooking.status === "in_trip") && (

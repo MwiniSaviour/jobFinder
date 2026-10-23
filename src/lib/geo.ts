@@ -1,3 +1,8 @@
+import type { GhanaPostLocation } from "./ghanapost";
+import {
+  lookupDigitalAddress,
+  lookupLocationForCoords,
+} from "./ghanapost";
 import type { RideClass } from "./rides";
 
 export type LatLng = { lat: number; lng: number };
@@ -118,7 +123,13 @@ const MOCK_DRIVERS: Record<string, { name: string; vehicle: string; plate: strin
 
 const FALLBACK_DRIVER = { name: "Ama Serwaa", vehicle: "Toyota Vitz", plate: "GR 0071 B" };
 
-const GPS_FIX: LatLng = { lat: 5.6037, lng: -0.187 };
+const REGION_LETTERS: Record<string, string> = {
+  G: "accra",
+  A: "kumasi",
+  W: "takoradi",
+  C: "cape-coast",
+  N: "tamale",
+};
 
 function round2(value: number): number {
   const rounded = Math.round(value * 100) / 100;
@@ -242,11 +253,97 @@ export async function searchPlaces(
   return [...regionHits, ...placeHits].slice(0, 8);
 }
 
-export async function getGpsPosition(): Promise<LatLng> {
-  return { ...GPS_FIX };
+export type GpsErrorKind = "denied" | "timeout" | "unavailable";
+
+export class GpsError extends Error {
+  kind: GpsErrorKind;
+
+  constructor(kind: GpsErrorKind) {
+    super(kind);
+    this.name = "GpsError";
+    this.kind = kind;
+  }
 }
 
-export async function reverseGeocode(lat: number, lng: number): Promise<{ name?: string }> {
+export async function getGpsPosition(): Promise<LatLng> {
+  if (typeof navigator === "undefined" || !navigator?.geolocation) {
+    throw new GpsError("unavailable");
+  }
+  return new Promise<LatLng>((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({ lat: position.coords.latitude, lng: position.coords.longitude });
+      },
+      (error) => {
+        if (error?.code === error?.PERMISSION_DENIED) {
+          reject(new GpsError("denied"));
+        } else if (error?.code === error?.TIMEOUT) {
+          reject(new GpsError("timeout"));
+        } else {
+          reject(new GpsError("unavailable"));
+        }
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+    );
+  });
+}
+
+function regionIdForGhanaPost(place: GhanaPostLocation): string | null {
+  return (
+    nearestRegion(`${place.region} ${place.district}`)?.id ??
+    REGION_LETTERS[place.code?.[0] ?? ""] ??
+    null
+  );
+}
+
+function ghanapostLabel(place: GhanaPostLocation): string {
+  const parts = [place.street, place.area, place.district, place.region];
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      lines.push(trimmed);
+    }
+    if (lines.length === 3) {
+      break;
+    }
+  }
+  return lines.join(", ") || place.code || "Ghana Post GPS";
+}
+
+export async function resolveDigitalAddress(value: string): Promise<PlaceResult | null> {
+  try {
+    const place = await lookupDigitalAddress(value);
+    if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) {
+      return null;
+    }
+    return {
+      addr: ghanapostLabel(place),
+      lat: place.lat,
+      lng: place.lng,
+      regionId: regionIdForGhanaPost(place),
+      name: place.code ? `Ghana Post ${place.code}` : ghanapostLabel(place),
+      detail: place.region,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+): Promise<{ name?: string; digitalAddress?: string }> {
+  try {
+    const place = await lookupLocationForCoords(lat, lng);
+    if (place && Number.isFinite(place.lat) && Number.isFinite(place.lng)) {
+      const name =
+        nearestRegion(`${place.region} ${place.district}`)?.name ?? place.district.trim();
+      return place.code ? { name, digitalAddress: place.code } : { name };
+    }
+  } catch {}
   const point: LatLng = { lat, lng };
   let best: Region | null = null;
   let bestKm = Number.POSITIVE_INFINITY;
