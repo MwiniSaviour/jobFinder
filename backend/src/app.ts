@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getPrisma } from "./db.js";
 import type { Env } from "./auth/middleware.js";
+import { uploads } from "./routes/v1/uploads.js";
 
 const corsOrigins = (process.env.JF_CORS_ORIGINS ?? "http://localhost:3000,capacitor://localhost,https://localhost")
   .split(",")
@@ -18,7 +19,9 @@ app.use("*", cors({ origin: corsOrigins, credentials: true, allowHeaders: ["Auth
 
 app.use("*", async (c, next) => {
   const contentLength = Number(c.req.header("content-length") ?? 0);
-  const maxBytes = c.req.path === UPLOAD_PATH ? MAX_UPLOAD_BYTES : MAX_BODY_BYTES;
+  const path = c.req.path;
+  const isUpload = path === UPLOAD_PATH || path === `${UPLOAD_PATH}/`;
+  const maxBytes = isUpload ? MAX_UPLOAD_BYTES : MAX_BODY_BYTES;
   if (contentLength > maxBytes) {
     return c.json({ error: "Payload too large" }, 413);
   }
@@ -26,6 +29,8 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/ping", (c) => c.json({ ok: true }));
+
+app.route("/v1/uploads", uploads);
 
 app.get("/health", async (c) => {
   try {
