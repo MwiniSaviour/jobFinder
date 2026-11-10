@@ -51,6 +51,7 @@ enum RideStatus {
 
 model User {
   id            String    @id @default(cuid())
+  clerkUserId   String?   @unique
   name          String?
   email         String?   @unique
   emailVerified DateTime?
@@ -60,8 +61,6 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts                  Account[]
-  sessions                  Session[]
   jobPosts                  JobPost[]
   jobApplications           JobApplication[]
   serviceBookingsAsCustomer ServiceBooking[] @relation("ServiceCustomer")
@@ -71,56 +70,18 @@ model User {
   providerProfile           Provider?
 }
 
-model Account {
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?  @db.Text
-  access_token      String?  @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?  @db.Text
-  session_state     String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([provider, providerAccountId])
-}
-
-model Session {
-  sessionToken String   @id
-  userId       String
-  expires      DateTime
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@id([identifier, token])
-}
-
 model Provider {
-  id            String         @id @default(cuid())
-  userId        String         @unique
-  displayName   String
-  nationalIdHash String        @unique
-  idDocumentUrl String?
-  status        ProviderStatus @default(PENDING)
-  lat           Float?
-  lng           Float?
-  location      Unsupported("geography(Point,4326)")?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  userId         String         @unique
+  displayName    String
+  nationalIdHash String         @unique
+  idDocumentUrl  String?
+  status         ProviderStatus @default(PENDING)
+  lat            Float?
+  lng            Float?
+  location       Unsupported("geography(Point,4326)")?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   user     User             @relation(fields: [userId], references: [id])
   listings ServiceListing[]
@@ -168,8 +129,8 @@ model ServiceListing {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  provider Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  category ServiceCategory  @relation(fields: [categoryId], references: [id])
+  provider Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category ServiceCategory @relation(fields: [categoryId], references: [id])
   bookings ServiceBooking[]
 
   @@index([providerId])
@@ -188,9 +149,9 @@ model ServiceBooking {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  customer User            @relation("ServiceCustomer", fields: [customerId], references: [id], onDelete: Cascade)
-  provider User            @relation("ServiceProvider", fields: [providerId], references: [id])
-  listing  ServiceListing  @relation(fields: [listingId], references: [id])
+  customer User           @relation("ServiceCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  provider User           @relation("ServiceProvider", fields: [providerId], references: [id])
+  listing  ServiceListing @relation(fields: [listingId], references: [id])
 
   @@index([customerId])
   @@index([providerId])
@@ -244,8 +205,8 @@ model RideRequest {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  customer User     @relation("RideCustomer", fields: [customerId], references: [id], onDelete: Cascade)
-  driver   Driver?  @relation("RideDriver", fields: [driverId], references: [id])
+  customer User    @relation("RideCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  driver   Driver? @relation("RideDriver", fields: [driverId], references: [id])
 
   @@index([pickupH3Cell])
   @@index([customerId])
