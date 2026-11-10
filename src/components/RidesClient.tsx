@@ -4,10 +4,13 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
+import { createRide, pollRide, newIdempotencyKey } from "@/lib/jobsApi";
+import type { JobDto } from "@/lib/jobsApi";
 import dynamic from "next/dynamic";
 import { onProfileChange, profileStore } from "@/lib/profile";
 import {
@@ -20,7 +23,6 @@ import type { RideClass } from "@/lib/rides";
 import {
   RIDE_CANCEL_WINDOW_MINUTES,
   RIDE_FREE_WAIT_MINUTES,
-  generatePin,
   isRideCancellable,
   rideBookings,
   rideCancelFee,
@@ -38,7 +40,6 @@ import {
   formatCedis,
   getGpsPosition,
   haversineKm,
-  mockDriver,
   nearestRegion,
   popularPlaces,
   regionForName,
@@ -100,10 +101,9 @@ const GPS_ERROR = "We couldn't reach your location.";
 const GPS_DENIED = "Location permission is off. Allow it, or set pickup manually.";
 const DIGITAL_ERROR = "That digital address wasn't found.";
 const GPS_PICKUP_LABEL = "Set pickup manually";
-const MATCH_DELAY_SECONDS = 6;
-const DRIVER_ARRIVES_AFTER_SECONDS = 25;
 const PIN_STRIKE_LIMIT = 3;
 const BASE_ETA_MINUTES = 5;
+const POLL_INTERVAL_MS = 5000;
 const TIP_CHIPS = [0, 10, 15, 20];
 const RATING_VALUES = [1, 2, 3, 4, 5];
 
@@ -113,14 +113,13 @@ const TRIP_PROMISES = [
   "Fare shown before you confirm",
 ];
 
-const DRIVER_FALLBACK = { name: "Kwame", vehicle: "Silver Honda Civic", plate: "GR 0000-24" };
-
 const CLASS_FALLBACK: RideClass[] = ["Economy", "Comfort", "SUV"];
 
 const FAILURE_COPY: Record<string, string> = {
   pickup_code: "Ride cancelled. The pickup code was entered wrong three times.",
   no_receiver: "Driver waited, but no one shared the pickup code in time.",
   changed_mind: "Ride cancelled by you.",
+  failed: "Ride cancelled. Something went wrong while completing the trip.",
 };
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -136,12 +135,6 @@ function clockLabel(value: string): string {
   const suffix = hour >= 12 ? "PM" : "AM";
   const display = hour % 12 === 0 ? 12 : hour % 12;
   return `${display}:${minutes ?? "00"} ${suffix}`;
-}
-
-function isoAt(value: string | null): number {
-  if (!value) return 0;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function safeDistanceKm(from: LatLng, to: LatLng): number | null {
@@ -203,26 +196,45 @@ function nearestRegionForText(value: string | null | undefined): Region | null {
   }
 }
 
-function driverFor(region: Region | null): { name: string; vehicle: string; plate: string } {
-  if (!region) return DRIVER_FALLBACK;
-  try {
-    const info = mockDriver(region.id);
-    if (info && typeof info.name === "string" && info.name.trim().length > 0) {
-      return {
-        name: info.name,
-        vehicle: typeof info.vehicle === "string" && info.vehicle ? info.vehicle : DRIVER_FALLBACK.vehicle,
-        plate: typeof info.plate === "string" && info.plate ? info.plate : DRIVER_FALLBACK.plate,
-      };
-    }
-  } catch {
-    return DRIVER_FALLBACK;
+function serverPatchFor(
+  job: JobDto,
+): Partial<RideBooking> {
+  const taskStatus = job.task?.status ?? null;
+  const status = serverStatusToRideStatus(job.status, taskStatus);
+  const patch: Partial<RideBooking> = {
+    serverStatus: job.status,
+    serverTaskStatus: taskStatus,
+    status,
+  };
+  const pickupCode = job.task?.pickupCode;
+  if (typeof pickupCode === "string" && pickupCode.length > 0) {
+    patch.pinCode = pickupCode;
   }
-  return DRIVER_FALLBACK;
-}
-
-function etaMinutesOf(booking: RideBooking): number {
-  const value = booking.etaMinutes;
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : BASE_ETA_MINUTES;
+  const dropoffCode = job.task?.dropoffCode;
+  if (typeof dropoffCode === "string" && dropoffCode.length > 0) {
+    patch.dropoffCode = dropoffCode;
+  }
+  if (typeof job.etaMinutes === "number" && Number.isFinite(job.etaMinutes) && job.etaMinutes > 0) {
+    patch.etaMinutes = job.etaMinutes;
+  }
+  const fare = Number(job.fare);
+  if (Number.isFinite(fare) && fare >= 0) {
+    patch.fare = fare;
+  }
+  if (job.payment) {
+    patch.paymentMethod = job.payment.method;
+    patch.paymentReference = job.payment.reference;
+    patch.paymentStatus = job.payment.status;
+    patch.checkoutUrl = job.payment.checkoutUrl;
+  }
+  if (status === "completed") {
+    patch.completedAt = new Date().toISOString();
+  }
+  if (status === "cancelled") {
+    patch.cancelledAt = new Date().toISOString();
+    patch.failureReason = taskStatus === "failed" ? "failed" : "changed_mind";
+  }
+  return patch;
 }
 
 function statusLabel(booking: RideBooking): string {
@@ -354,6 +366,9 @@ function MapSkeleton() {
 type ProfileSnapshot = {
   city: string | null;
   savedPlaces?: string[];
+  name?: string;
+  phone?: string;
+  email?: string;
 };
 
 function readProfile(): ProfileSnapshot {
@@ -491,7 +506,7 @@ export default function RidesClient() {
   const [toast, setToast] = useState<string | null>(null);
   const [tipPercent, setTipPercent] = useState(0);
   const [rating, setRating] = useState(0);
-  const [tick, setTick] = useState(0);
+  const bookingRef = useRef(false);
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
   const [regionOpen, setRegionOpen] = useState(false);
 
@@ -618,55 +633,34 @@ export default function RidesClient() {
   const requestClass = rideClass;
   const fareEstimate = fareAmount(distanceKm, requestClass, parcelMode ? weightTier : null);
 
-  const advanceRide = useCallback((found: RideBooking | undefined) => {
-    if (!found) return;
-    const now = Date.now();
-    if (
-      found.status === "matching" &&
-      now - isoAt(found.createdAt) > MATCH_DELAY_SECONDS * 1000 &&
-      !found.failureReason
-    ) {
-      const driver = driverFor(nearestRegionForText(found.pickup) ?? regionForPlaceText(found.pickup));
-      rideBookings.update(found.id, {
-        status: "assigned",
-        driver: driver.name,
-        vehicle: driver.vehicle,
-        plate: driver.plate,
-        assignedAt: new Date(now).toISOString(),
-      });
-      return;
-    }
-    if (
-      found.status === "assigned" &&
-      now - isoAt(found.assignedAt) > DRIVER_ARRIVES_AFTER_SECONDS * 1000
-    ) {
-      rideBookings.update(found.id, {
-        status: "arrived",
-        arrivedAt: new Date(now).toISOString(),
-      });
-      return;
-    }
-    if (found.status === "in_trip" && found.startedAt) {
-      const tripMs = etaMinutesOf(found) * 60 * 1000;
-      if (now - isoAt(found.startedAt) >= tripMs) {
-        rideBookings.update(found.id, {
-          status: "completed",
-          completedAt: new Date(now).toISOString(),
-        });
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!activeBookingId) return;
-    const timer = setInterval(() => setTick((value) => value + 1), 1000);
-    return () => clearInterval(timer);
-  }, [activeBookingId]);
-
   useEffect(() => {
     const found = activeBooking;
-    advanceRide(found ?? undefined);
-  }, [tick, activeBooking, advanceRide]);
+    if (!found || !found.jobId) return;
+    const localStatus = found.status;
+    if (localStatus === "completed" || localStatus === "cancelled" || localStatus === "canceled") return;
+    const jobId = found.jobId;
+    let inflight = false;
+    const timer = setInterval(async () => {
+      if (inflight) return;
+      inflight = true;
+      const outcome = await pollRide(jobId);
+      inflight = false;
+      if (!outcome.job) return;
+      const current = rideBookings
+        .getSnapshot()
+        .find((entry) => entry.id === found.id);
+      if (!current) return;
+      if (current.status === "completed" || current.status === "cancelled" || current.status === "canceled") return;
+      if (current.jobId !== jobId) return;
+      const nextServerStatus = outcome.job.status;
+      const nextServerTaskStatus = outcome.job.task?.status ?? null;
+      if (current.serverStatus === nextServerStatus && current.serverTaskStatus === nextServerTaskStatus) {
+        return;
+      }
+      rideBookings.update(found.id, serverPatchFor(outcome.job));
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [activeBooking]);
 
   const commitPlace = useCallback(
     async (value: unknown, target: "pickup" | "dropoff") => {
@@ -683,7 +677,19 @@ export default function RidesClient() {
       const region = regionForPlaceText(place.regionId) ?? activeRegion;
       const stamped: PlaceResult = region ? { ...place, regionId: region.id } : place;
       if (target === "pickup") setPickupPlace(stamped);
-      else setDropoffPlace(stamped);
+      else {
+        setDropoffPlace(stamped);
+        const snapshot = profileStore.getSnapshot();
+        const rawSaved = (snapshot as { savedPlaces?: unknown }).savedPlaces;
+        const savedList = Array.isArray(rawSaved) ? rawSaved : [];
+        const label = stamped.addr.trim();
+        if (
+          label.length > 0 &&
+          !savedList.some((entry) => typeof entry === "string" && entry.trim() === label)
+        ) {
+          profileStore.write({ ...snapshot, savedPlaces: [...savedList, label].slice(-6) });
+        }
+      }
       setSaveTarget(null);
     },
     [activeRegion, showToast],
@@ -748,13 +754,24 @@ export default function RidesClient() {
     [activeBooking, showToast],
   );
 
-  const beginRide = useCallback(() => {
+  const beginRide = useCallback(async () => {
     if (!pickup || !dropoff) {
       showToast(PLACE_ERROR);
       return;
     }
+    if (bookingRef.current) return;
+    const contactName = typeof profile?.name === "string" ? profile.name.trim() : "";
+    const contactPhone = typeof profile?.phone === "string" ? profile.phone.trim() : "";
+    if (!contactName || !contactPhone) {
+      showToast("Add your name and phone in your profile first.");
+      return;
+    }
     if (parcelMode && weightTier === null) {
       showToast("Choose a parcel size first.");
+      return;
+    }
+    if (fareEstimate === null) {
+      showToast("We couldn't price this trip yet. Try again.");
       return;
     }
     const now = new Date();
@@ -769,26 +786,84 @@ export default function RidesClient() {
             : new Date(now.getFullYear(), now.getMonth(), now.getDate(), safeHour, safeMinute)
           ).toISOString()
         : null;
-    if (fareEstimate === null) {
-      showToast("We couldn't price this trip yet. Try again.");
+    const sendScheduled =
+      typeof reservedFor === "string" && Date.parse(reservedFor) > Date.now() + 60_000;
+    const contact = {
+      name: contactName,
+      phone: contactPhone,
+      ...(typeof profile?.email === "string" && profile.email.trim().length > 0
+        ? { email: profile.email.trim() }
+        : {}),
+    };
+    const pickupPayload = {
+      name: pickup.addr,
+      address: pickup.addr,
+      region: activeRegion?.name ?? "",
+      lat: pickup.lat,
+      lng: pickup.lng,
+    };
+    const dropoffPayload = {
+      name: dropoff.addr,
+      address: dropoff.addr,
+      region: activeRegion?.name ?? "",
+      lat: dropoff.lat,
+      lng: dropoff.lng,
+    };
+    const payload = {
+      requestType: parcelMode ? ("parcel" as const) : ("ride" as const),
+      contact,
+      pickup: pickupPayload,
+      dropoff: dropoffPayload,
+      ...(parcelMode && weightTier !== null
+        ? { parcelTier: weightTier }
+        : {
+            rideClass:
+              rideClass === "Economy"
+                ? ("economy" as const)
+                : rideClass === "Comfort"
+                  ? ("comfort" as const)
+                  : ("suv" as const),
+          }),
+      note: note.trim().length > 0 ? note.trim() : undefined,
+      ...(sendScheduled && reservedFor ? { scheduledFor: reservedFor } : {}),
+      idempotencyKey: newIdempotencyKey(),
+    };
+    bookingRef.current = true;
+    let outcome;
+    try {
+      outcome = await createRide(payload);
+    } finally {
+      bookingRef.current = false;
+    }
+    if (!outcome.ok) {
+      showToast(outcome.error);
       return;
     }
+    const job = outcome.job;
+    const taskStatus = job.task?.status ?? null;
+    const serverFare = Number(job.fare);
     const booking: RideBooking = {
       id: `rb_${Date.now()}`,
       requestType: parcelMode ? "parcel" : "ride",
-      weightTier,
+      weightTier: parcelMode ? weightTier : null,
       pickup: pickup.addr,
       dropoff: dropoff.addr,
       pickupCoord: { lat: pickup.lat, lng: pickup.lng },
       dropoffCoord: { lat: dropoff.lat, lng: dropoff.lng },
       distanceKm: distanceKm ?? 0,
       day: rideDayForDate(now),
-      dayLabel: scheduleMode === "later" && reservedFor ? formatRideDate(new Date(reservedFor)) : formatRideDate(now),
-      time: scheduleMode === "later" ? clockLabel(laterTime) : now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-      etaMinutes: etaMinutes ?? BASE_ETA_MINUTES,
-      fare: fareEstimate,
+      dayLabel:
+        scheduleMode === "later" && reservedFor
+          ? formatRideDate(new Date(reservedFor))
+          : formatRideDate(now),
+      time:
+        scheduleMode === "later"
+          ? clockLabel(laterTime)
+          : now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      etaMinutes: job.etaMinutes ?? etaMinutes ?? BASE_ETA_MINUTES,
+      fare: Number.isFinite(serverFare) && serverFare > 0 ? serverFare : fareEstimate,
       note,
-      status: "matching",
+      status: serverStatusToRideStatus(job.status, taskStatus),
       createdAt: new Date(now).toISOString(),
       assignedAt: null,
       arrivedAt: null,
@@ -805,16 +880,43 @@ export default function RidesClient() {
       class: rideClass,
       schedule: { mode: scheduleMode, reservedFor },
       destinationChanges: [],
-      pinCode: generatePin(),
+      pinCode: typeof job.task?.pickupCode === "string" ? job.task.pickupCode : "",
       pinAttempts: 0,
       verifiedAt: null,
       failureReason: null,
       seats: 1,
+      jobId: job.jobId,
+      source: "server",
+      serverStatus: job.status,
+      serverTaskStatus: taskStatus,
+      dropoffCode: typeof job.task?.dropoffCode === "string" ? job.task.dropoffCode : null,
+      contactName,
+      contactPhone,
+      paymentMethod: job.payment?.method ?? null,
+      paymentReference: job.payment?.reference ?? null,
+      paymentStatus: job.payment?.status ?? null,
+      checkoutUrl: job.payment?.checkoutUrl ?? null,
     };
     rideBookings.add(booking);
     setActiveBookingId(booking.id);
     setStep("status");
-  }, [pickup, dropoff, distanceKm, rideClass, parcelMode, weightTier, scheduleMode, laterTime, laterDate, note, etaMinutes, fareEstimate, showToast]);
+  }, [
+    activeRegion,
+    pickup,
+    dropoff,
+    distanceKm,
+    rideClass,
+    parcelMode,
+    weightTier,
+    scheduleMode,
+    laterTime,
+    laterDate,
+    note,
+    etaMinutes,
+    fareEstimate,
+    profile,
+    showToast,
+  ]);
 
   const cancelRide = useCallback(() => {
     const found = activeBooking;
@@ -838,7 +940,8 @@ export default function RidesClient() {
 
   const verifyPin = useCallback(() => {
     const found = activeBooking;
-    if (!found || found.verifiedAt || found.status !== "arrived") return;
+    if (!found || found.verifiedAt) return;
+    if (found.status !== "assigned" && found.status !== "arrived") return;
     rideBookings.update(found.id, {
       status: "in_trip",
       startedAt: new Date().toISOString(),
@@ -1309,9 +1412,13 @@ export default function RidesClient() {
               <section className="mt-3 rounded-[16px] border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-bold text-ink">{activeBooking.driver || DRIVER_FALLBACK.name}</p>
+                    <p className="text-sm font-bold text-ink">
+                      {activeBooking.driver || "Driver assigned"}
+                    </p>
                     <p className="text-xs text-muted">
-                      {activeBooking.vehicle || DRIVER_FALLBACK.vehicle} · Plate {activeBooking.plate || DRIVER_FALLBACK.plate}
+                      {activeBooking.vehicle && activeBooking.plate
+                        ? `${activeBooking.vehicle} · Plate ${activeBooking.plate}`
+                        : "Share your pickup code when the driver arrives."}
                     </p>
                   </div>
                   <div className="flex gap-2">

@@ -55,7 +55,36 @@ export type RideBooking = {
   tipPercent: number;
   rating: number | null;
   destinationChanges: RideDestinationChange[];
+  jobId?: string;
+  source?: "local" | "server";
+  serverStatus?: string | null;
+  serverTaskStatus?: string | null;
+  dropoffCode?: string | null;
+  contactName?: string;
+  contactPhone?: string;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
+  paymentStatus?: string | null;
+  checkoutUrl?: string | null;
 };
+
+export type ServerRideStatus = {
+  serverStatus: string;
+  serverTaskStatus: string | null;
+  target: RideBookingStatus;
+};
+
+export function serverStatusToRideStatus(
+  orderStatus: string,
+  taskStatus: string | null,
+): RideBookingStatus {
+  if (orderStatus === "cancelled") return "cancelled";
+  if (taskStatus === "delivered") return "completed";
+  if (taskStatus === "failed") return "cancelled";
+  if (taskStatus === "en-route" || taskStatus === "picked-up") return "in_trip";
+  if (taskStatus === "accepted") return "assigned";
+  return "matching";
+}
 
 export type ServiceBookingStatus =
   | "pending"
@@ -240,6 +269,21 @@ function normalizeRideBooking(value: unknown): RideBooking | null {
     destinationChanges: Array.isArray(item.destinationChanges)
       ? item.destinationChanges.filter(isDestinationChange)
       : [],
+    jobId: isString(item.jobId) ? item.jobId : undefined,
+    source: item.source === "server" ? "server" : undefined,
+    serverStatus: isNullableString(item.serverStatus) ? item.serverStatus : null,
+    serverTaskStatus: isNullableString(item.serverTaskStatus)
+      ? item.serverTaskStatus
+      : null,
+    dropoffCode: isNullableString(item.dropoffCode) ? item.dropoffCode : null,
+    contactName: isString(item.contactName) ? item.contactName : "",
+    contactPhone: isString(item.contactPhone) ? item.contactPhone : "",
+    paymentMethod: isNullableString(item.paymentMethod) ? item.paymentMethod : null,
+    paymentReference: isNullableString(item.paymentReference)
+      ? item.paymentReference
+      : null,
+    paymentStatus: isNullableString(item.paymentStatus) ? item.paymentStatus : null,
+    checkoutUrl: isNullableString(item.checkoutUrl) ? item.checkoutUrl : null,
   };
 }
 
@@ -351,10 +395,6 @@ export function rideTotal(booking: RideBooking): number {
 export function rideTipAmount(booking: RideBooking, percent?: number): number {
   const pct = percent ?? booking.tipPercent;
   return Math.round(booking.fare * (pct / 100));
-}
-
-export function generatePin(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 export type RideReceiptLine = { label: string; amount: number };

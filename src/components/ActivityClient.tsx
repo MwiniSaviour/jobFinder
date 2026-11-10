@@ -55,7 +55,8 @@ export function ActivityClient() {
   const bookingCount = services.length;
   const rideCount = rides.length;
   const activeRideCount = rides.filter(
-    (ride) => ride.status !== "completed" && ride.status !== "cancelled",
+    (ride) =>
+      ride.status !== "completed" && ride.status !== "cancelled" && ride.status !== "canceled",
   ).length;
 
   const segments: string[] = [];

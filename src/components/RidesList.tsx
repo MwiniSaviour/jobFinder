@@ -69,7 +69,7 @@ export function RidesList() {
             icon={<CarIcon className="size-6" />}
             primary={`${booking.pickup} → ${booking.dropoff}`}
             secondary={`${rideDate(booking)} · ${booking.time} · ${RIDE_STATUS_LABEL[booking.status]}`}
-            badge={`$${rideTotal(booking)}`}
+            badge={`GH₵ ${rideTotal(booking).toFixed(2)}`}
             onClick={() => router.push(RIDES_HREF)}
           />
         </li>
