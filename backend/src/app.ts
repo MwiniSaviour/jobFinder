@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getPrisma } from "./db.js";
+import type { Env } from "./auth/middleware.js";
 
 const corsOrigins = (process.env.JF_CORS_ORIGINS ?? "http://localhost:3000,capacitor://localhost,https://localhost")
   .split(",")
@@ -11,7 +12,7 @@ const MAX_BODY_BYTES = 100_000;
 const MAX_UPLOAD_BYTES = 10_000_000;
 const UPLOAD_PATH = "/v1/uploads";
 
-const app = new Hono();
+const app = new Hono<Env>();
 
 app.use("*", cors({ origin: corsOrigins, credentials: true, allowHeaders: ["Authorization", "Content-Type"], allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] }));
 
