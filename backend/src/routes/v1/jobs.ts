@@ -1,9 +1,15 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { Prisma, type JobPost } from "@prisma/client";
 import type { Env } from "../../auth/middleware.js";
-import { requireAuth } from "../../auth/middleware.js";
+import { optionalAuth, requireAuth } from "../../auth/middleware.js";
 import { getPrisma } from "../../db.js";
-import { toApplication, toJobSummary, type JobSummary } from "../../serializers.js";
+import { rateLimit } from "../../rate-limit.js";
+import {
+  toApplication,
+  toJobSummary,
+  type ApplicationAnswers,
+  type JobSummary,
+} from "../../serializers.js";
 import {
   decodeCursor,
   encodeCursor,
@@ -57,7 +63,71 @@ function prismaErrorCode(error: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-jobs.get("/", requireAuth, async (c) => {
+type RadiusFilter =
+  | { ok: true; value: { lat: number; lng: number; meters: number } | null }
+  | { ok: false };
+
+function parseRadius(
+  latRaw: string | undefined,
+  lngRaw: string | undefined,
+  radiusRaw: string | undefined,
+): RadiusFilter {
+  const provided = [latRaw, lngRaw, radiusRaw].filter((value) => value !== undefined);
+  if (provided.length === 0) return { ok: true, value: null };
+  if (provided.length !== 3) return { ok: false };
+
+  const lat = Number(latRaw);
+  const lng = Number(lngRaw);
+  const radiusKm = Number(radiusRaw);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) return { ok: false };
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) return { ok: false };
+  if (!Number.isFinite(radiusKm) || radiusKm < 1 || radiusKm > 100) return { ok: false };
+  return { ok: true, value: { lat, lng, meters: radiusKm * 1000 } };
+}
+
+const ANSWER_KEYS = new Set(["startDate", "note"]);
+const MAX_START_DATE_LENGTH = 64;
+const MAX_NOTE_LENGTH = 1000;
+
+async function readAnswers(c: Context<Env>): Promise<{ ok: true; value: ApplicationAnswers | null } | { ok: false }> {
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    return { ok: true, value: null };
+  }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return { ok: false };
+
+  const body = raw as Record<string, unknown>;
+  for (const key of Object.keys(body)) {
+    if (key !== "answers") return { ok: false };
+  }
+
+  const answersRaw = body.answers;
+  if (answersRaw === undefined || answersRaw === null) return { ok: true, value: null };
+  if (typeof answersRaw !== "object" || Array.isArray(answersRaw)) return { ok: false };
+
+  const answers = answersRaw as Record<string, unknown>;
+  for (const key of Object.keys(answers)) {
+    if (!ANSWER_KEYS.has(key)) return { ok: false };
+  }
+
+  const startDate = answers.startDate;
+  const note = answers.note;
+  if (startDate !== undefined && startDate !== null && typeof startDate !== "string") return { ok: false };
+  if (note !== undefined && note !== null && typeof note !== "string") return { ok: false };
+  if (typeof startDate === "string" && startDate.length > MAX_START_DATE_LENGTH) return { ok: false };
+  if (typeof note === "string" && note.length > MAX_NOTE_LENGTH) return { ok: false };
+
+  const value: ApplicationAnswers = {
+    startDate: typeof startDate === "string" && startDate.length > 0 ? startDate : null,
+    note: typeof note === "string" && note.length > 0 ? note : null,
+  };
+  if (value.startDate === null && value.note === null) return { ok: true, value: null };
+  return { ok: true, value };
+}
+
+jobs.get("/", optionalAuth, rateLimit({ limit: 120, windowSeconds: 60 }), async (c) => {
   const categories = parseCategories(c.req.queries("categories") ?? []);
   if (categories.length > MAX_CATEGORIES) {
     return c.json({ error: "Too many categories" }, 400);
@@ -94,7 +164,17 @@ jobs.get("/", requireAuth, async (c) => {
   const qRaw = c.req.query("q");
   const q = qRaw !== undefined && qRaw.trim() !== "" ? qRaw.slice(0, MAX_QUERY_LENGTH) : null;
 
+  const radius = parseRadius(
+    c.req.query("lat"),
+    c.req.query("lng"),
+    c.req.query("radiusKm"),
+  );
+  if (!radius.ok) {
+    return c.json({ error: "Invalid radius" }, 400);
+  }
+
   const conditions: Prisma.Sql[] = [];
+  conditions.push(Prisma.sql`"status" = 'PUBLISHED'`);
   if (q !== null) {
     conditions.push(Prisma.sql`"search" @@ plainto_tsquery('english', ${q})`);
   }
@@ -103,6 +183,11 @@ jobs.get("/", requireAuth, async (c) => {
   }
   if (!includeUnlistedPay) {
     conditions.push(Prisma.sql`"salaryAmount" IS NOT NULL`);
+  }
+  if (radius.value !== null) {
+    conditions.push(
+      Prisma.sql`ST_DWithin("location", ST_SetSRID(ST_MakePoint(${radius.value.lng}, ${radius.value.lat}), 4326)::geography, ${radius.value.meters})`,
+    );
   }
   if (cursor) {
     if (cursor.k === "new") {
@@ -161,48 +246,78 @@ jobs.get("/", requireAuth, async (c) => {
     }
   }
 
-  const items: JobSummary[] = ordered.map((post) => toJobSummary(post));
+  const items: JobSummary[] = await (async () => {
+    const user = c.get("user");
+    const savedIds = new Set<string>();
+    if (user) {
+      const saved = await prisma.savedJob.findMany({
+        where: { userId: user.id },
+        select: { postId: true },
+      });
+      for (const row of saved) savedIds.add(row.postId);
+    }
+    return ordered.map((post) => toJobSummary(post, { saved: savedIds.has(post.id) }));
+  })();
+
   return c.json({ items, nextCursor });
 });
-
-jobs.get("/:id", requireAuth, async (c) => {
+jobs.get("/:id", optionalAuth, rateLimit({ limit: 120, windowSeconds: 60 }), async (c) => {
   const prisma = getPrisma();
   const post = await prisma.jobPost.findUnique({ where: { id: c.req.param("id") } });
   if (!post) return c.json({ error: "Job not found" }, 404);
+  const status = post.status ?? "PUBLISHED";
+  if (status !== "PUBLISHED") {
+    const user = c.get("user");
+    if (!user || user.id !== post.authorId) return c.json({ error: "Job not found" }, 404);
+  }
   return c.json(toJobSummary(post));
 });
 
-jobs.post("/:id/applications", requireAuth, async (c) => {
-  const prisma = getPrisma();
-  const user = c.get("user");
-  const job = await prisma.jobPost.findUnique({ where: { id: c.req.param("id") } });
-  if (!job) return c.json({ error: "Job not found" }, 404);
+jobs.post(
+  "/:id/applications",
+  requireAuth,
+  rateLimit({ limit: 10, windowSeconds: 60 }),
+  async (c) => {
+    const prisma = getPrisma();
+    const user = c.get("user");
+    const job = await prisma.jobPost.findUnique({ where: { id: c.req.param("id") } });
+    if (!job) return c.json({ error: "Job not found" }, 404);
 
-  try {
-    const created = await prisma.jobApplication.create({
-      data: { postId: job.id, applicantId: user.id, status: "SUBMITTED" },
-    });
+    const answers = await readAnswers(c);
+    if (!answers.ok) return c.json({ error: "Invalid answers" }, 400);
 
-    const application = toApplication({
-      id: created.id,
-      postId: created.postId,
-      status: created.status,
-      createdAt: created.createdAt,
-      updatedAt: created.updatedAt,
-      post: { id: job.id, title: job.title, company: job.company },
-    });
+    try {
+      const created = await prisma.jobApplication.create({
+        data: {
+          postId: job.id,
+          applicantId: user.id,
+          status: "SUBMITTED",
+          ...(answers.value ? { answers: answers.value } : {}),
+        },
+      });
 
-    return c.json(application, 201);
-  } catch (error) {
-    const code = prismaErrorCode(error);
-    if (code === "P2002") {
-      return c.json({ error: "Already applied" }, 409);
+      const application = toApplication({
+        id: created.id,
+        postId: created.postId,
+        status: created.status,
+        answers: created.answers,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+        post: { id: job.id, title: job.title, company: job.company },
+      });
+
+      return c.json(application, 201);
+    } catch (error) {
+      const code = prismaErrorCode(error);
+      if (code === "P2002") {
+        return c.json({ error: "Already applied" }, 409);
+      }
+      if (code === "P2003") {
+        return c.json({ error: "Job not found" }, 404);
+      }
+      throw error;
     }
-    if (code === "P2003") {
-      return c.json({ error: "Job not found" }, 404);
-    }
-    throw error;
-  }
-});
+  },
+);
 
 export { jobs };

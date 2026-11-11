@@ -2,7 +2,12 @@ import type { Context, Next } from "hono";
 import type { Role } from "@prisma/client";
 import { authenticateToken, type AuthUser } from "./clerk.js";
 
-export type Env = { Variables: { user: AuthUser } };
+export type Env = {
+  Variables: { user: AuthUser };
+  Bindings: {
+    incoming?: { socket?: { remoteAddress?: string | undefined } };
+  };
+};
 
 export async function requireAuth(c: Context<Env>, next: Next): Promise<Response | void> {
   const result = await authenticateToken(c.req.header("authorization"));

@@ -3,6 +3,7 @@ import { ApplicationStatus, Prisma } from "@prisma/client";
 import type { Env } from "../../auth/middleware.js";
 import { requireAuth } from "../../auth/middleware.js";
 import { getPrisma } from "../../db.js";
+import { rateLimit } from "../../rate-limit.js";
 import { toApplication } from "../../serializers.js";
 import { decodeCursor, encodeCursor, parseLimit } from "../../pagination.js";
 
@@ -108,6 +109,63 @@ applications.post("/:id/withdraw", requireAuth, async (c) => {
     return c.json({ error: "Application already withdrawn" }, 409);
   }
   return c.json({ error: "Application can no longer be withdrawn" }, 409);
+});
+
+const REVIEWABLE_STATUSES = ["REVIEWING", "ACCEPTED", "REJECTED"] as const;
+const ALLOWED_TRANSITIONS: Record<string, readonly string[]> = {
+  SUBMITTED: ["REVIEWING", "ACCEPTED", "REJECTED"],
+  REVIEWING: ["ACCEPTED", "REJECTED"],
+};
+
+applications.patch("/:id", requireAuth, rateLimit({ limit: 60, windowSeconds: 60 }), async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid status" }, 400);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return c.json({ error: "Invalid status" }, 400);
+  }
+  const payload = body as Record<string, unknown>;
+  const status = payload.status;
+  if (typeof status !== "string" || !REVIEWABLE_STATUSES.includes(status as never)) {
+    return c.json({ error: "Invalid status" }, 400);
+  }
+
+  const prisma = getPrisma();
+  const existing = await prisma.jobApplication.findUnique({
+    where: { id },
+    include: { post: { select: { id: true, title: true, company: true, authorId: true } } },
+  });
+  if (!existing || existing.post.authorId !== user.id) {
+    return c.json({ error: "Application not found" }, 404);
+  }
+
+  const allowed = ALLOWED_TRANSITIONS[existing.status] ?? [];
+  if (!allowed.includes(status)) {
+    return c.json({ error: "Application status cannot change" }, 409);
+  }
+
+  const updated = await prisma.jobApplication.update({
+    where: { id },
+    data: { status: status as ApplicationStatus },
+  });
+
+  return c.json(
+    toApplication({
+      id: updated.id,
+      postId: updated.postId,
+      status: updated.status,
+      answers: updated.answers,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+      post: { id: existing.post.id, title: existing.post.title, company: existing.post.company },
+    }),
+  );
 });
 
 export { applications };

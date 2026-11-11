@@ -34,6 +34,12 @@ enum ApplicationStatus {
   WITHDRAWN
 }
 
+enum JobPostStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -64,6 +70,8 @@ model User {
 
   jobPosts                  JobPost[]
   jobApplications           JobApplication[]
+  savedJobs                 SavedJob[]
+  recentSearches            RecentSearch[]
   serviceBookingsAsCustomer ServiceBooking[] @relation("ServiceCustomer")
   serviceBookingsAsProvider ServiceBooking[] @relation("ServiceProvider")
   rideRequestsAsCustomer    RideRequest[]    @relation("RideCustomer")
@@ -174,6 +182,8 @@ model JobPost {
   reviews      Int?
   lat          Float?
   lng          Float?
+  locationText String?
+  status       JobPostStatus @default(PUBLISHED)
   location     Unsupported("geography(Point,4326)")?
   search       Unsupported("tsvector")? @default(dbgenerated("to_tsvector('english'::regconfig, ((((COALESCE(title, ''::text) || ' '::text) || COALESCE(company, ''::text)) || ' '::text) || description))"))
   createdAt    DateTime @default(now())
@@ -181,12 +191,14 @@ model JobPost {
 
   author       User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
   applications JobApplication[]
+  savedBy      SavedJob[]
 
   @@index([authorId])
   @@index([search], type: Gin)
   @@index([createdAt, id])
   @@index([salaryAmount, id])
   @@index([category])
+  @@index([status, createdAt, id])
 }
 
 model JobApplication {
@@ -194,6 +206,7 @@ model JobApplication {
   postId      String
   applicantId String
   status      ApplicationStatus @default(SUBMITTED)
+  answers     Json?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -204,6 +217,41 @@ model JobApplication {
   @@index([postId])
   @@index([applicantId])
   @@index([applicantId, createdAt, id])
+}
+
+model SavedJob {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post JobPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId, createdAt, id])
+}
+
+model RecentSearch {
+  id        String   @id @default(cuid())
+  userId    String
+  query     String
+  queryKey  String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, queryKey])
+  @@index([userId, createdAt, id])
+}
+
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+  @@index([windowStart])
 }
 
 model RideRequest {

@@ -18,6 +18,8 @@ export type JobPostLike = {
   salaryEst: boolean | null;
   rating: number | null;
   reviews: number | null;
+  locationText?: string | null;
+  status?: string | null;
   createdAt: Date;
   [key: string]: unknown;
 };
@@ -33,10 +35,16 @@ export type JobApplicationLike<TStatus extends string = string> = {
   id: string;
   postId: string;
   status: TStatus;
+  answers?: unknown;
   createdAt: Date;
   updatedAt: Date;
   post: JobPostRelationLike;
   [key: string]: unknown;
+};
+
+export type ApplicationAnswers = {
+  startDate: string | null;
+  note: string | null;
 };
 
 export type JobSummary = {
@@ -53,6 +61,9 @@ export type JobSummary = {
   reviews: number | null;
   createdAt: string;
   posted: string;
+  locationText: string | null;
+  status: string;
+  saved: boolean;
 };
 
 export type ApplicationSummary<TStatus extends string = string> = {
@@ -61,6 +72,26 @@ export type ApplicationSummary<TStatus extends string = string> = {
   status: TStatus;
   createdAt: string;
   updatedAt: string;
+  answers: ApplicationAnswers | null;
+  post: {
+    id: string;
+    title: string;
+    company: string | null;
+  };
+};
+
+export type ApplicantSummary<TStatus extends string = string> = {
+  id: string;
+  postId: string;
+  status: TStatus;
+  createdAt: string;
+  updatedAt: string;
+  answers: ApplicationAnswers | null;
+  applicant: {
+    id: string;
+    name: string | null;
+    email: string | null;
+  };
   post: {
     id: string;
     title: string;
@@ -105,7 +136,7 @@ export function formatPosted(createdAt: Date, now: Date = new Date()): string {
   return ago(Math.floor(days / YEAR_DAYS), "year");
 }
 
-export function toJobSummary(post: JobPostLike): JobSummary {
+export function toJobSummary(post: JobPostLike, options: { saved?: boolean } = {}): JobSummary {
   return {
     id: post.id,
     title: post.title,
@@ -120,7 +151,19 @@ export function toJobSummary(post: JobPostLike): JobSummary {
     reviews: post.reviews,
     createdAt: post.createdAt.toISOString(),
     posted: formatPosted(post.createdAt),
+    locationText: post.locationText ?? null,
+    status: post.status ?? "PUBLISHED",
+    saved: options.saved ?? false,
   };
+}
+
+export function normalizeAnswers(value: unknown): ApplicationAnswers | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const startDate = typeof item.startDate === "string" && item.startDate.length > 0 ? item.startDate : null;
+  const note = typeof item.note === "string" && item.note.length > 0 ? item.note : null;
+  if (startDate === null && note === null) return null;
+  return { startDate, note };
 }
 
 export function toApplication<TStatus extends string>(
@@ -132,6 +175,32 @@ export function toApplication<TStatus extends string>(
     status: app.status,
     createdAt: app.createdAt.toISOString(),
     updatedAt: app.updatedAt.toISOString(),
+    answers: normalizeAnswers(app.answers),
+    post: {
+      id: app.post.id,
+      title: app.post.title,
+      company: app.post.company,
+    },
+  };
+}
+
+export function toApplicantSummary<TStatus extends string>(
+  app: JobApplicationLike<TStatus> & {
+    applicant: { id: string; name: string | null; email: string | null };
+  },
+): ApplicantSummary<TStatus> {
+  return {
+    id: app.id,
+    postId: app.postId,
+    status: app.status,
+    createdAt: app.createdAt.toISOString(),
+    updatedAt: app.updatedAt.toISOString(),
+    answers: normalizeAnswers(app.answers),
+    applicant: {
+      id: app.applicant.id,
+      name: app.applicant.name,
+      email: app.applicant.email,
+    },
     post: {
       id: app.post.id,
       title: app.post.title,

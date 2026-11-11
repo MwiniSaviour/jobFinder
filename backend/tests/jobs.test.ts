@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 const userApi = { findUnique: vi.fn() };
 const jobPostApi = { findUnique: vi.fn(), findMany: vi.fn() };
 const jobApplicationApi = { create: vi.fn() };
+const savedJobApi = { findMany: vi.fn() };
 
 type RawJobRow = {
   id: string;
@@ -102,6 +103,7 @@ const stub = {
   user: userApi,
   jobPost: jobPostApi,
   jobApplication: jobApplicationApi,
+  savedJob: savedJobApi,
   $queryRaw: queryRaw,
 } as unknown as ReturnType<typeof getPrisma>;
 
@@ -153,6 +155,8 @@ beforeEach(async () => {
   jobPostApi.findMany.mockResolvedValue([]);
   jobApplicationApi.create.mockReset();
   jobApplicationApi.create.mockResolvedValue(null);
+  savedJobApi.findMany.mockReset();
+  savedJobApi.findMany.mockResolvedValue([]);
   queryRaw.mockReset();
   queryRaw.mockResolvedValue([]);
 });
@@ -163,12 +167,120 @@ afterEach(() => {
 });
 
 describe("GET /v1/jobs", () => {
-  it("returns 401 without a bearer token", async () => {
+  it("returns the list to an anonymous caller", async () => {
     const res = await app.request("/v1/jobs");
 
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Missing bearer token" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [], nextCursor: null });
+    expect(queryRaw).toHaveBeenCalled();
+  });
+
+  it("marks the caller's saved jobs", async () => {
+    const token = await makeToken({ sub: "user_clerk1" });
+    queryRaw.mockResolvedValue([rawRow("job1")]);
+    jobPostApi.findMany.mockResolvedValue([
+      {
+        id: "job1",
+        authorId: "u2",
+        title: "Delivery Driver",
+        description: "Deliver food",
+        company: "FreshCart",
+        jobType: "Full-time",
+        category: "Delivery",
+        salaryAmount: 2200,
+        salaryFrom: null,
+        salaryEst: null,
+        rating: 4.5,
+        reviews: 12,
+        locationText: "Riverside",
+        status: "PUBLISHED",
+        createdAt: new Date("2026-11-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-11-01T00:00:00.000Z"),
+      },
+    ]);
+    savedJobApi.findMany.mockResolvedValue([{ postId: "job1" }]);
+
+    const res = await app.request("/v1/jobs", { headers: authHeaders(token) });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string; saved: boolean }[] };
+    expect(body.items[0].saved).toBe(true);
+    expect(savedJobApi.findMany).toHaveBeenCalledWith({ where: { userId: "u1" }, select: { postId: true } });
+  });
+
+  it("leaves the saved flag false for an anonymous caller", async () => {
+    queryRaw.mockResolvedValue([rawRow("job1")]);
+    jobPostApi.findMany.mockResolvedValue([
+      {
+        id: "job1",
+        authorId: "u2",
+        title: "Delivery Driver",
+        description: "Deliver food",
+        company: "FreshCart",
+        jobType: "Full-time",
+        category: "Delivery",
+        salaryAmount: 2200,
+        salaryFrom: null,
+        salaryEst: null,
+        rating: 4.5,
+        reviews: 12,
+        locationText: "Riverside",
+        status: "PUBLISHED",
+        createdAt: new Date("2026-11-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-11-01T00:00:00.000Z"),
+      },
+    ]);
+
+    const res = await app.request("/v1/jobs");
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { saved: boolean }[] };
+    expect(body.items[0].saved).toBe(false);
+    expect(savedJobApi.findMany).not.toHaveBeenCalled();
+  });
+
+  it("only lists published jobs", async () => {
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    const res = await app.request("/v1/jobs", { headers: authHeaders(token) });
+
+    expect(res.status).toBe(200);
+    expect(rawQueryText()).toContain("\"status\" = 'PUBLISHED'");
+  });
+
+  it("rejects an incomplete radius filter with 400", async () => {
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    const res = await app.request("/v1/jobs?lat=5.6", { headers: authHeaders(token) });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid radius" });
     expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out of range radius with 400", async () => {
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    const res = await app.request("/v1/jobs?lat=5.6&lng=-0.2&radiusKm=500", {
+      headers: authHeaders(token),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid radius" });
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("binds the radius filter as a distance predicate", async () => {
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    const res = await app.request("/v1/jobs?lat=5.6037&lng=-0.187&radiusKm=10", {
+      headers: authHeaders(token),
+    });
+
+    expect(res.status).toBe(200);
+    expect(rawQueryText()).toContain("ST_DWithin");
+    const values = boundValues();
+    expect(values).toContain(10_000);
   });
 
   it("binds the q filter as a plainto_tsquery argument", async () => {
@@ -241,7 +353,7 @@ describe("GET /v1/jobs", () => {
 
     expect(res.status).toBe(200);
     expect(rawQueryText()).not.toContain('"salaryAmount" IS NOT NULL');
-    expect(rawQueryText()).not.toContain("WHERE");
+    expect(rawQueryText()).toContain("WHERE \"status\" = 'PUBLISHED'");
   });
 
   it("orders by createdAt desc for sort=new", async () => {
@@ -530,6 +642,9 @@ describe("GET /v1/jobs/:id", () => {
       reviews: 12,
       createdAt: "2026-11-01T00:00:00.000Z",
       posted: expect.stringMatching(/^(\d+ (minute|hour|day|week|month|year)s? ago|just now)$/),
+      locationText: null,
+      status: "PUBLISHED",
+      saved: false,
     });
     expect(Object.keys(body)).not.toContain("authorId");
     expect("salaryAmount" in body).toBe(true);
@@ -582,6 +697,7 @@ describe("POST /v1/jobs/:id/applications", () => {
       id: "app1",
       postId: "job1",
       status: "SUBMITTED",
+      answers: null,
       createdAt: "2026-11-11T00:00:00.000Z",
       updatedAt: "2026-11-11T00:00:00.000Z",
       post: { id: "job1", title: "Delivery Rider", company: "FreshCart" },

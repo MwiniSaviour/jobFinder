@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../../auth/middleware.js";
 import { requireAuth } from "../../auth/middleware.js";
+import { rateLimit } from "../../rate-limit.js";
 import { isUploadsConfigured, uploadImage } from "../../uploads/cloudinary.js";
 
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -13,7 +14,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
 
 const uploads = new Hono<Env>();
 
-uploads.post("/", requireAuth, async (c) => {
+uploads.post("/", requireAuth, rateLimit({ limit: 20, windowSeconds: 60 }), async (c) => {
   const contentType = (c.req.header("content-type") ?? "").split(";")[0].trim().toLowerCase();
   if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
     return c.json({ error: "Unsupported media type" }, 415);

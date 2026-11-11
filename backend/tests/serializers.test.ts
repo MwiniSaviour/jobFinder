@@ -108,6 +108,9 @@ describe("toJobSummary", () => {
       "reviews",
       "createdAt",
       "posted",
+      "locationText",
+      "status",
+      "saved",
     ]);
   });
 
@@ -156,7 +159,7 @@ describe("toJobSummary", () => {
 
     const summary = toJobSummary(sparsePost);
 
-    expect(Object.keys(summary)).toHaveLength(13);
+    expect(Object.keys(summary)).toHaveLength(16);
     expect(summary.company).toBeNull();
     expect(summary.jobType).toBeNull();
     expect(summary.category).toBeNull();
@@ -195,6 +198,7 @@ describe("toApplication", () => {
       "status",
       "createdAt",
       "updatedAt",
+      "answers",
       "post",
     ]);
   });

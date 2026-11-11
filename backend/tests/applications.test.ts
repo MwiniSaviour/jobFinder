@@ -167,6 +167,7 @@ describe("GET /v1/applications", () => {
           status: "SUBMITTED",
           createdAt: "2026-01-02T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
+          answers: null,
           post: { id: "post2", title: "Platform Engineer", company: "Globex" },
         },
         {
@@ -175,6 +176,7 @@ describe("GET /v1/applications", () => {
           status: "SUBMITTED",
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
+          answers: null,
           post: { id: "post1", title: "Backend Engineer", company: "Acme" },
         },
       ],
@@ -396,6 +398,7 @@ describe("POST /v1/applications/:id/withdraw", () => {
       status: "WITHDRAWN",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-05T00:00:00.000Z",
+      answers: null,
       post: { id: "post1", title: "Backend Engineer", company: "Acme" },
     });
     expect(jobApplicationApi.updateMany).toHaveBeenCalledTimes(1);
