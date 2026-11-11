@@ -619,4 +619,18 @@ describe("POST /v1/jobs/:id/applications", () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "Already applied" });
   });
+
+  it("returns 404 when the job is deleted before the application is created", async () => {
+    jobPostApi.findUnique.mockResolvedValue(makeJob());
+    jobApplicationApi.create.mockRejectedValue(Object.assign(new Error("fk"), { code: "P2003" }));
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    const res = await app.request("/v1/jobs/job1/applications", {
+      method: "POST",
+      headers: authHeaders(token),
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Job not found" });
+  });
 });

@@ -100,7 +100,7 @@ The `GENERATED ALWAYS` clause exists only in the migration SQL, which is hand-ma
 
 ## Tests
 
-`npm test` runs the vitest suite: 91 tests across 7 files. `tests/integration.live.test.ts` is reported as skipped.
+`npm test` runs the vitest suite: 122 tests across 8 files. `tests/integration.live.test.ts` is reported as skipped.
 
 ### Live integration tests
 
@@ -135,7 +135,7 @@ The script verifies that `GET /health` returns `{ "ok": true }` and that unauthe
 | --- | --- | --- | --- |
 | `GET` | `/ping` | No | Liveness probe returning `{ "ok": true }`. |
 | `GET` | `/health` | No | Database health probe; returns `503` when the database is unreachable. |
-| `POST` | `/v1/uploads` | Yes | Upload an image (`Content-Type: image/*`); returns `{ "url": "..." }`. |
+| `POST` | `/v1/uploads` | Yes | Upload an image (`Content-Type: image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/avif`); returns `{ "url": "..." }`. |
 | `GET` | `/v1/jobs` | Yes | Filtered, sorted, cursor-paginated job list. |
 | `GET` | `/v1/jobs/:id` | Yes | Single job detail. |
 | `POST` | `/v1/jobs/:id/applications` | Yes | Apply to a job. |
@@ -147,3 +147,25 @@ Every `/v1/jobs` and `/v1/applications` route requires a bearer token — there 
 List cursors are base64url-encoded JSON; the `createdAt` value they carry is compared in UTC.
 
 All error responses use the shape `{ "error": "..." }`.
+
+### Request body limits
+
+Request bodies are capped at 100 KB, raised to 10 MB for `POST /v1/uploads`.
+
+| Condition | Response |
+| --- | --- |
+| Declared `Content-Length` above the limit | `413 { "error": "Payload too large" }` |
+| Body received without a `Content-Length` (chunked) that exceeds the limit | `413 { "error": "Payload too large" }` |
+| Malformed or negative `Content-Length` | `400 { "error": "Invalid Content-Length" }` |
+
+Bodies without a declared length are buffered under the cap while they stream, so an oversized upload is rejected instead of being read into memory. The buffered body replaces the request body, so handlers still read it normally.
+
+### Auth errors
+
+| Condition | Response |
+| --- | --- |
+| No bearer token | `401 { "error": "Missing bearer token" }` |
+| Expired, tampered, wrong-issuer, or unknown-key token | `401 { "error": "Invalid or expired token" }` |
+| `CLERK_ISSUER_URL` unset, or an unusable key set | `503 { "error": "Auth is not configured" }` |
+| The issuer's key set could not be reached | `503 { "error": "Auth service unavailable" }` |
+| Email already linked to another Clerk account | `409 { "error": "Email already in use" }` |

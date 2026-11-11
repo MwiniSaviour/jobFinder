@@ -95,6 +95,51 @@ describe("POST /v1/uploads", () => {
     expect(uploadMock).not.toHaveBeenCalled();
   });
 
+  it("returns 415 for image types outside the allowlist", async () => {
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    const res = await upload(new Uint8Array([1, 2, 3]), {
+      authorization: `Bearer ${token}`,
+      "content-type": "image/svg+xml",
+    });
+
+    expect(res.status).toBe(415);
+    expect(await res.json()).toEqual({ error: "Unsupported media type" });
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 415 for an image type with a lookalike subtype", async () => {
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    const res = await upload(new Uint8Array([1, 2, 3]), {
+      authorization: `Bearer ${token}`,
+      "content-type": "image/png.exe",
+    });
+
+    expect(res.status).toBe(415);
+    expect(await res.json()).toEqual({ error: "Unsupported media type" });
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts each allowed image type", async () => {
+    vi.stubEnv("CLOUDINARY_CLOUD_NAME", "demo");
+    vi.stubEnv("CLOUDINARY_API_KEY", "key");
+    vi.stubEnv("CLOUDINARY_API_SECRET", "secret");
+    uploadMock.mockResolvedValue({ secure_url: "https://res.cloudinary.com/demo/x.png" });
+    const token = await makeToken({ sub: "user_clerk1" });
+
+    for (const contentType of ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]) {
+      uploadMock.mockClear();
+      const res = await upload(new Uint8Array([1, 2, 3]), {
+        authorization: `Bearer ${token}`,
+        "content-type": contentType,
+      });
+
+      expect(res.status).toBe(200);
+      expect(uploadMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("returns 503 when cloudinary is not configured", async () => {
     const token = await makeToken({ sub: "user_clerk1" });
 

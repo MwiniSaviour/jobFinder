@@ -79,7 +79,7 @@ Status: approved (sections 1–4). Scope: foundation only — jobs/services/ride
 ## 4. Uploads & verification
 
 - `POST /v1/uploads` (auth required via `requireAuth`):
-  - Raw body bytes; requires `Content-Type: image/*` (415 otherwise); > 10 MB → 413.
+  - Raw body bytes; requires `Content-Type: image/*` (415 otherwise); > 10 MB → 413. Narrowed to an explicit allowlist in the phase-2 review hardening pass — see the phase-2 spec §10.
   - Cloudinary signed upload (`uploader.upload` with data URI, folder `jobfinder`, resource_type `image`) → `{ url: secure_url }`.
   - Cloudinary env incomplete → 503 `{ error: "Uploads are not configured" }` (dev-safe).
 - Smoke script `src/smoke.ts` (`npm run smoke` in backend): expects base URL `JF_SMOKE_BASE` (default `http://localhost:4002`); checks `GET /health` → `{ok:true}`, unauthenticated request to an auth-gated route → 401, unauthenticated upload → 401.

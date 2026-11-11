@@ -96,6 +96,22 @@ describe("requireAuth", () => {
     expect(await res.json()).toEqual({ error: "Auth is not configured" });
   });
 
+  it("returns 503 when the local JWKS document is malformed", async () => {
+    vi.stubEnv("CLERK_JWKS_JSON", "{not-json");
+    const res = await app.request("/me", { headers: { authorization: `Bearer ${await makeToken({ sub: "user_x" })}` } });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "Auth is not configured" });
+    expect(userApi.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when the token matches no key in a valid JWKS document", async () => {
+    vi.stubEnv("CLERK_JWKS_JSON", JSON.stringify({ keys: [] }));
+    const res = await app.request("/me", { headers: { authorization: `Bearer ${await makeToken({ sub: "user_x" })}` } });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Invalid or expired token" });
+    expect(userApi.findUnique).not.toHaveBeenCalled();
+  });
+
   it("returns 401 for a token from an untrusted issuer", async () => {
     const otherKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const token = await new SignJWT({ sub: "user_x" })

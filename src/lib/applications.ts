@@ -110,30 +110,6 @@ function normalizeEventSource(value: unknown): ApplicationEventSource | null {
   return null;
 }
 
-function isEvent(value: unknown): value is ApplicationEvent {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Record<string, unknown>;
-  return (
-    isString(item.at) &&
-    isApplicationStatus(item.status) &&
-    (item.source === "you" || item.source === "employer") &&
-    isString(item.text)
-  );
-}
-
-export function isApplicationRecord(value: unknown): value is ApplicationRecord {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Record<string, unknown>;
-  return (
-    isNumber(item.jobId) &&
-    isApplicationStatus(item.status) &&
-    isString(item.appliedAt) &&
-    isString(item.updatedAt) &&
-    Array.isArray(item.events) &&
-    item.events.every(isEvent)
-  );
-}
-
 function normalizeEvent(value: unknown): ApplicationEvent | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
@@ -141,7 +117,8 @@ function normalizeEvent(value: unknown): ApplicationEvent | null {
   const source = normalizeEventSource(item.source);
   if (!status || !source) return null;
   if (!isString(item.at) || !isString(item.text)) return null;
-  return { at: item.at, status, source, text: item.text };
+  const text = isApplicationStatus(item.status) ? item.text : APPLICATION_STATUS_COPY[status];
+  return { at: item.at, status, source, text };
 }
 
 function normalizeApplicationRecord(value: unknown): ApplicationRecord | null {
@@ -308,13 +285,6 @@ export function applySimulatedResponseNow(
     updatedAt: at,
     events,
   });
-}
-
-export function applicationForJob(
-  records: ApplicationRecord[],
-  jobId: number,
-): ApplicationRecord | undefined {
-  return records.find((record) => record.jobId === jobId);
 }
 
 export function formatEventTime(value: string): string {

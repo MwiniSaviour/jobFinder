@@ -52,6 +52,7 @@ import {
   isTerminalStatus,
   APPLICATION_STATUS_COPY,
   APPLICATION_STATUS_LABEL,
+  type ApplicationStatus,
 } from "../../lib/applications";
 
 type View = "intake" | "results" | "detail";
@@ -210,14 +211,15 @@ function setJobCategory(next: string): void {
 
 type ResultCardProps = {
   job: JobListing;
-  applied: boolean;
+  applicationStatus: ApplicationStatus | null;
   entranceDelay?: number;
   onOpen: () => void;
   onApply: () => void;
 };
 
-function ResultCard({ job, applied, entranceDelay, onOpen, onApply }: ResultCardProps) {
+function ResultCard({ job, applicationStatus, entranceDelay, onOpen, onApply }: ResultCardProps) {
   const style = entranceDelay === undefined ? undefined : ({ "--hero-delay": `${entranceDelay}ms` } as CSSProperties);
+  const settled = applicationStatus !== null && applicationStatus !== "ACCEPTED" && isTerminalStatus(applicationStatus);
 
   return (
     <article
@@ -248,9 +250,15 @@ function ResultCard({ job, applied, entranceDelay, onOpen, onApply }: ResultCard
         <span className="text-[12px] text-muted">
           <StarIcon className="size-3.5 text-accent" /> {job.rating.toFixed(1)} ({job.reviews})
         </span>
-        {applied ? (
-          <span className="ml-auto rounded-full bg-brand px-3 py-1.5 text-[12px] font-semibold text-white">
-            Applied
+        {applicationStatus ? (
+          <span
+            className={
+              settled
+                ? "ml-auto rounded-full border border-border bg-surface-alt px-3 py-1.5 text-[12px] font-semibold text-muted"
+                : "ml-auto rounded-full bg-brand px-3 py-1.5 text-[12px] font-semibold text-white"
+            }
+          >
+            {APPLICATION_STATUS_LABEL[applicationStatus]}
           </span>
         ) : (
           <button
@@ -299,10 +307,13 @@ export default function JobsPage() {
     writeFilters(updater(readFilters()));
   }, []);
 
-  const appliedIds = useMemo(
-    () => state.applications.map((application) => application.jobId),
-    [state.applications],
-  );
+  const applicationStatusByJobId = useMemo(() => {
+    const statuses = new Map<number, ApplicationStatus>();
+    for (const application of state.applications) {
+      statuses.set(application.jobId, application.status);
+    }
+    return statuses;
+  }, [state.applications]);
 
   const deepLinkId = useSyncExternalStore(
     subscribeToJobDetailId,
@@ -375,7 +386,7 @@ export default function JobsPage() {
       const existing = readJobsState().applications.find(
         (application) => application.jobId === jobId,
       );
-      if (existing && existing.status !== "WITHDRAWN") return;
+      if (existing) return;
       const record = createApplication(jobId, startChoice, note.trim());
       updateJobsState((prev) => ({
         ...prev,
@@ -536,7 +547,7 @@ export default function JobsPage() {
               <ResultCard
                 key={job.id}
                 job={job}
-                applied={appliedIds.includes(job.id)}
+                applicationStatus={applicationStatusByJobId.get(job.id) ?? null}
                 onOpen={() => openDetail(job.id, "intake")}
                 onApply={() => startApply(job.id, "intake")}
               />
@@ -616,7 +627,7 @@ export default function JobsPage() {
             <ResultCard
               key={job.id}
               job={job}
-              applied={appliedIds.includes(job.id)}
+              applicationStatus={applicationStatusByJobId.get(job.id) ?? null}
               entranceDelay={index < 6 ? index * 60 : undefined}
               onOpen={() => openDetail(job.id, "results")}
               onApply={() => startApply(job.id, "results")}
@@ -750,10 +761,16 @@ export default function JobsPage() {
           </div>
         ) : null}
         <div className="sticky bottom-20 z-30 mt-6">
-          {applied ? (
-            <div className="flex items-center justify-center gap-2 rounded-full bg-brand-soft px-5 py-3 text-sm font-semibold text-brand">
+          {applicationRecord ? (
+            <div
+              className={
+                applicationRecord.status !== "ACCEPTED" && isTerminalStatus(applicationRecord.status)
+                  ? "flex items-center justify-center gap-2 rounded-full border border-border bg-surface-alt px-5 py-3 text-sm font-semibold text-muted"
+                  : "flex items-center justify-center gap-2 rounded-full bg-brand-soft px-5 py-3 text-sm font-semibold text-brand"
+              }
+            >
               <CheckIcon className="size-4" />
-              {applied}
+              {APPLICATION_STATUS_LABEL[applicationRecord.status]}
             </div>
           ) : applying ? (
             <button

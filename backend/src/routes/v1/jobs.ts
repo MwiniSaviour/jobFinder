@@ -51,9 +51,10 @@ function narrowCursor(cursor: Cursor, sort: CursorSort): RouteCursor | null {
   return { k: "pay", v: value, i: cursor.i };
 }
 
-function isUniqueConstraintError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  return (error as { code?: unknown }).code === "P2002";
+function prismaErrorCode(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
 }
 
 jobs.get("/", requireAuth, async (c) => {
@@ -193,8 +194,12 @@ jobs.post("/:id/applications", requireAuth, async (c) => {
 
     return c.json(application, 201);
   } catch (error) {
-    if (isUniqueConstraintError(error)) {
+    const code = prismaErrorCode(error);
+    if (code === "P2002") {
       return c.json({ error: "Already applied" }, 409);
+    }
+    if (code === "P2003") {
+      return c.json({ error: "Job not found" }, 404);
     }
     throw error;
   }

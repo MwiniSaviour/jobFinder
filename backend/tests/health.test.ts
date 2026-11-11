@@ -77,4 +77,22 @@ describe("body size limit", () => {
     });
     expect(res.status).not.toBe(413);
   });
+
+  it("rejects a malformed content-length with 400", async () => {
+    const res = await app.request("/", {
+      method: "POST",
+      headers: { "content-length": "not-a-number" },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid Content-Length" });
+  });
+
+  it("rejects a negative content-length with 400", async () => {
+    const res = await app.request("/", {
+      method: "POST",
+      headers: { "content-length": "-1" },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid Content-Length" });
+  });
 });

@@ -11,7 +11,9 @@ const server = serve({ fetch: app.fetch, port }, (info) => {
 
 async function shutdown(): Promise<void> {
   console.log("Shutting down…");
-  void server.close();
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
+  });
   await closePrisma();
   process.exit(0);
 }

@@ -1,4 +1,4 @@
-import { createLocalJWKSet, createRemoteJWKSet, jwtVerify } from "jose";
+import { createLocalJWKSet, createRemoteJWKSet, errors, jwtVerify } from "jose";
 import { Prisma, type User } from "@prisma/client";
 import { getPrisma } from "../db.js";
 
@@ -32,6 +32,20 @@ function verificationKey(iss: string) {
     remoteJwksCache.set(iss, handle);
   }
   return handle;
+}
+
+function isTokenFailure(error: unknown): boolean {
+  return (
+    error instanceof errors.JWTExpired ||
+    error instanceof errors.JWTClaimValidationFailed ||
+    error instanceof errors.JWSSignatureVerificationFailed ||
+    error instanceof errors.JWSInvalid ||
+    error instanceof errors.JWTInvalid ||
+    error instanceof errors.JOSENotSupported ||
+    error instanceof errors.JOSEAlgNotAllowed ||
+    error instanceof errors.JWKSNoMatchingKey ||
+    error instanceof errors.JWKSMultipleMatchingKeys
+  );
 }
 
 async function fetchClerkUser(sub: string): Promise<{ email: string | null; name: string | null } | null> {
@@ -84,16 +98,27 @@ export async function authenticateToken(header: string | undefined): Promise<Aut
     return { ok: false, status: 503, error: "Auth is not configured" };
   }
 
+  let key: ReturnType<typeof verificationKey>;
+  try {
+    key = verificationKey(iss);
+  } catch {
+    return { ok: false, status: 503, error: "Auth is not configured" };
+  }
+
   let payload: JwtPayload;
   try {
-    const verified = await jwtVerify(token, verificationKey(iss), {
+    const verified = await jwtVerify(token, key, {
       issuer: iss,
       algorithms: ["RS256"],
       clockTolerance: 30,
     });
     payload = verified.payload;
-  } catch {
-    return { ok: false, status: 401, error: "Invalid or expired token" };
+  } catch (error) {
+    if (isTokenFailure(error)) {
+      return { ok: false, status: 401, error: "Invalid or expired token" };
+    }
+    console.error("Auth key set unavailable", error);
+    return { ok: false, status: 503, error: "Auth service unavailable" };
   }
   const sub = payload.sub;
   if (typeof sub !== "string" || !sub) {
