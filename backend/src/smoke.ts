@@ -51,12 +51,59 @@ async function checkAnonymousUpload(): Promise<string> {
   return "401 unauthorized";
 }
 
+async function checkJobsRequireAuth(): Promise<string> {
+  const response = await fetch(`${baseUrl}/v1/jobs`);
+  expectStatus(response, 401, "GET /v1/jobs");
+  const body = (await response.json()) as { error?: string };
+  if (body.error !== "Missing bearer token") {
+    throw new Error(`GET /v1/jobs: expected { error: "Missing bearer token" }, received ${JSON.stringify(body)}`);
+  }
+  return "401 unauthorized";
+}
+
+async function checkApplicationsRequireAuth(): Promise<string> {
+  const response = await fetch(`${baseUrl}/v1/jobs/smoke-nonexistent/applications`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  expectStatus(response, 401, "POST /v1/jobs/:id/applications");
+  return "401 unauthorized";
+}
+
+async function checkJobDetailRequiresAuth(): Promise<string> {
+  const response = await fetch(`${baseUrl}/v1/jobs/smoke-nonexistent`);
+  expectStatus(response, 401, "GET /v1/jobs/:id");
+  return "401 unauthorized";
+}
+
+async function checkMyApplicationsRequireAuth(): Promise<string> {
+  const response = await fetch(`${baseUrl}/v1/applications`);
+  expectStatus(response, 401, "GET /v1/applications");
+  return "401 unauthorized";
+}
+
+async function checkWithdrawRequiresAuth(): Promise<string> {
+  const response = await fetch(`${baseUrl}/v1/applications/smoke-nonexistent/withdraw`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  expectStatus(response, 401, "POST /v1/applications/:id/withdraw");
+  return "401 unauthorized";
+}
+
 async function main(): Promise<void> {
   console.log(`Running smoke checks against ${baseUrl}`);
   const checks: CheckResult[] = [
     await runCheck("GET /health", checkHealth),
     await runCheck("POST /v1/uploads requires auth", checkAuthGate),
     await runCheck("POST /v1/uploads rejects anonymous uploads", checkAnonymousUpload),
+    await runCheck("GET /v1/jobs requires auth", checkJobsRequireAuth),
+    await runCheck("GET /v1/jobs/:id requires auth", checkJobDetailRequiresAuth),
+    await runCheck("POST /v1/jobs/:id/applications requires auth", checkApplicationsRequireAuth),
+    await runCheck("GET /v1/applications requires auth", checkMyApplicationsRequireAuth),
+    await runCheck("POST /v1/applications/:id/withdraw requires auth", checkWithdrawRequiresAuth),
   ];
 
   for (const result of checks) {

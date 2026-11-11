@@ -3,6 +3,8 @@ import { cors } from "hono/cors";
 import { getPrisma } from "./db.js";
 import type { Env } from "./auth/middleware.js";
 import { uploads } from "./routes/v1/uploads.js";
+import { jobs } from "./routes/v1/jobs.js";
+import { applications } from "./routes/v1/applications.js";
 
 const corsOrigins = (process.env.JF_CORS_ORIGINS ?? "http://localhost:3000,capacitor://localhost,https://localhost")
   .split(",")
@@ -31,6 +33,8 @@ app.use("*", async (c, next) => {
 app.get("/ping", (c) => c.json({ ok: true }));
 
 app.route("/v1/uploads", uploads);
+app.route("/v1/jobs", jobs);
+app.route("/v1/applications", applications);
 
 app.get("/health", async (c) => {
   try {

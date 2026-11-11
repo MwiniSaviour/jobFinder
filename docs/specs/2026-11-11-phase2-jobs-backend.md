@@ -1,6 +1,6 @@
 # Phase 2: Jobs & applications backend
 
-> Status: Draft — pending approval
+> Status: Approved 2026-11-11 — implemented
 
 ## 1. Scope
 
