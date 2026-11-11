@@ -375,7 +375,7 @@ export default function JobsPage() {
       const existing = readJobsState().applications.find(
         (application) => application.jobId === jobId,
       );
-      if (existing && existing.status !== "withdrawn") return;
+      if (existing && existing.status !== "WITHDRAWN") return;
       const record = createApplication(jobId, startChoice, note.trim());
       updateJobsState((prev) => ({
         ...prev,

@@ -1,12 +1,9 @@
 export type ApplicationStatus =
-  | "applied"
-  | "viewed"
-  | "shortlisted"
-  | "interview"
-  | "offer"
-  | "hired"
-  | "rejected"
-  | "withdrawn";
+  | "SUBMITTED"
+  | "REVIEWING"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "WITHDRAWN";
 
 export type ApplicationEventSource = "you" | "employer";
 
@@ -30,40 +27,27 @@ export type ApplicationRecord = {
 };
 
 export const APPLICATION_STATUS_LABEL: Record<ApplicationStatus, string> = {
-  applied: "Applied",
-  viewed: "Application viewed",
-  shortlisted: "Shortlisted",
-  interview: "Interview",
-  offer: "Job offer",
-  hired: "Hired",
-  rejected: "Not selected",
-  withdrawn: "Withdrawn",
+  SUBMITTED: "Applied",
+  REVIEWING: "In review",
+  ACCEPTED: "Accepted",
+  REJECTED: "Not selected",
+  WITHDRAWN: "Withdrawn",
 };
 
 export const APPLICATION_STATUS_COPY: Record<ApplicationStatus, string> = {
-  applied: "Your application is queued for the employer.",
-  viewed: "The employer opened your application.",
-  shortlisted: "The employer moved you forward.",
-  interview: "The employer asked for an interview.",
-  offer: "The employer made you an offer.",
-  hired: "The employer hired you.",
-  rejected: "The employer did not move forward.",
-  withdrawn: "You withdrew this application.",
+  SUBMITTED: "Your application is queued for the employer.",
+  REVIEWING: "The employer is reviewing your application.",
+  ACCEPTED: "The employer accepted your application.",
+  REJECTED: "The employer did not move forward.",
+  WITHDRAWN: "You withdrew this application.",
 };
 
-export const APPLICATION_STATUS_ORDER: ApplicationStatus[] = [
-  "applied",
-  "viewed",
-  "shortlisted",
-  "interview",
-  "offer",
-  "hired",
-];
+export const APPLICATION_STATUS_ORDER: ApplicationStatus[] = ["SUBMITTED", "REVIEWING"];
 
 export const TERMINAL_APPLICATION_STATUSES: ApplicationStatus[] = [
-  "hired",
-  "rejected",
-  "withdrawn",
+  "ACCEPTED",
+  "REJECTED",
+  "WITHDRAWN",
 ];
 
 export const APPLICATION_HISTORY_LIMIT = 50;
@@ -75,25 +59,19 @@ type SimulatedStep = {
 };
 
 export const SIMULATED_RESPONSE_PLAN: SimulatedStep[] = [
-  { from: "applied", to: "viewed", afterMs: 60_000 },
-  { from: "viewed", to: "shortlisted", afterMs: 240_000 },
-  { from: "shortlisted", to: "interview", afterMs: 480_000 },
-  { from: "interview", to: "offer", afterMs: 780_000 },
-  { from: "offer", to: "hired", afterMs: 1_200_000 },
+  { from: "SUBMITTED", to: "REVIEWING", afterMs: 60_000 },
+  { from: "REVIEWING", to: "ACCEPTED", afterMs: 480_000 },
 ];
 
 export const REJECTION_PROBABILITY = 0.3;
 
 export function isApplicationStatus(value: unknown): value is ApplicationStatus {
   return (
-    value === "applied" ||
-    value === "viewed" ||
-    value === "shortlisted" ||
-    value === "interview" ||
-    value === "offer" ||
-    value === "hired" ||
-    value === "rejected" ||
-    value === "withdrawn"
+    value === "SUBMITTED" ||
+    value === "REVIEWING" ||
+    value === "ACCEPTED" ||
+    value === "REJECTED" ||
+    value === "WITHDRAWN"
   );
 }
 
@@ -107,6 +85,29 @@ function isString(value: unknown): value is string {
 
 function isNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+const LEGACY_STATUS_MAP = new Map<string, ApplicationStatus>([
+  ["applied", "SUBMITTED"],
+  ["viewed", "REVIEWING"],
+  ["shortlisted", "REVIEWING"],
+  ["interview", "REVIEWING"],
+  ["offer", "REVIEWING"],
+  ["hired", "ACCEPTED"],
+  ["rejected", "REJECTED"],
+  ["withdrawn", "WITHDRAWN"],
+]);
+
+function normalizeLegacyStatus(value: unknown): ApplicationStatus | null {
+  if (isApplicationStatus(value)) return value;
+  if (!isString(value)) return null;
+  return LEGACY_STATUS_MAP.get(value) ?? null;
+}
+
+function normalizeEventSource(value: unknown): ApplicationEventSource | null {
+  if (value === "you") return "you";
+  if (value === "employer") return "employer";
+  return null;
 }
 
 function isEvent(value: unknown): value is ApplicationEvent {
@@ -133,12 +134,53 @@ export function isApplicationRecord(value: unknown): value is ApplicationRecord 
   );
 }
 
+function normalizeEvent(value: unknown): ApplicationEvent | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const status = normalizeLegacyStatus(item.status);
+  const source = normalizeEventSource(item.source);
+  if (!status || !source) return null;
+  if (!isString(item.at) || !isString(item.text)) return null;
+  return { at: item.at, status, source, text: item.text };
+}
+
+function normalizeApplicationRecord(value: unknown): ApplicationRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const status = normalizeLegacyStatus(item.status);
+  if (!status) return null;
+  if (!isNumber(item.jobId)) return null;
+  if (!isString(item.appliedAt) || !isString(item.updatedAt)) return null;
+  if (!Array.isArray(item.events)) return null;
+  const events: ApplicationEvent[] = [];
+  for (const entry of item.events) {
+    const event = normalizeEvent(entry);
+    if (!event) return null;
+    events.push(event);
+  }
+  const record: ApplicationRecord = {
+    jobId: item.jobId,
+    status,
+    appliedAt: item.appliedAt,
+    updatedAt: item.updatedAt,
+    startDate: isString(item.startDate) ? item.startDate : null,
+    note: isString(item.note) ? item.note : "",
+    events,
+    simulatedNextAt: null,
+    simulatedNextStatus: null,
+  };
+  return withNextSchedule(record);
+}
+
 export function parseApplications(raw: string | null): ApplicationRecord[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isApplicationRecord).slice(0, APPLICATION_HISTORY_LIMIT);
+    const records = parsed
+      .map((item) => normalizeApplicationRecord(item))
+      .filter((record): record is ApplicationRecord => record !== null);
+    return records.slice(0, APPLICATION_HISTORY_LIMIT);
   } catch {
     return [];
   }
@@ -163,7 +205,7 @@ export function nextSimulatedResponse(
   const plan = SIMULATED_RESPONSE_PLAN[planIndex];
   const roll = hash(jobId * 31 + planIndex * 7919 + 17);
   if (roll < REJECTION_PROBABILITY) {
-    return { status: "rejected", afterMs: plan.afterMs };
+    return { status: "REJECTED", afterMs: plan.afterMs };
   }
   return { status: plan.to, afterMs: plan.afterMs };
 }
@@ -194,12 +236,12 @@ export function createApplication(
   const at = now.toISOString();
   const record: ApplicationRecord = {
     jobId,
-    status: "applied",
+    status: "SUBMITTED",
     appliedAt: at,
     updatedAt: at,
     startDate,
     note,
-    events: [{ at, status: "applied", source: "you", text: "Application sent." }],
+    events: [{ at, status: "SUBMITTED", source: "you", text: "Application sent." }],
     simulatedNextAt: null,
     simulatedNextStatus: null,
   };
@@ -214,11 +256,11 @@ export function withdrawApplication(
   const at = now.toISOString();
   const events: ApplicationEvent[] = [
     ...record.events,
-    { at, status: "withdrawn", source: "you", text: "You withdrew this application." },
+    { at, status: "WITHDRAWN", source: "you", text: "You withdrew this application." },
   ];
   return {
     ...record,
-    status: "withdrawn",
+    status: "WITHDRAWN",
     updatedAt: at,
     events,
     simulatedNextAt: null,
@@ -230,6 +272,7 @@ export function applySimulatedResponse(
   record: ApplicationRecord,
   now: Date = new Date(),
 ): ApplicationRecord {
+  if (isTerminalStatus(record.status)) return record;
   if (!record.simulatedNextAt || !record.simulatedNextStatus) return record;
   const due = new Date(record.simulatedNextAt).getTime();
   if (Number.isNaN(due) || now.getTime() < due) return record;
@@ -251,6 +294,7 @@ export function applySimulatedResponseNow(
   record: ApplicationRecord,
   now: Date = new Date(),
 ): ApplicationRecord {
+  if (isTerminalStatus(record.status)) return record;
   if (!record.simulatedNextStatus) return record;
   const at = now.toISOString();
   const status = record.simulatedNextStatus;
