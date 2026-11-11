@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { BottomNav } from "../components/BottomNav";
+import { Providers } from "../components/Providers";
 import { StorageBoot } from "../components/StorageBoot";
 import "./globals.css";
 
@@ -19,7 +20,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={geistSans.variable}>
       <body className="min-h-dvh bg-background pb-[5.5rem] font-sans text-foreground antialiased">
-        {children}
+        <Providers>{children}</Providers>
         <StorageBoot />
         <BottomNav />
       </body>
